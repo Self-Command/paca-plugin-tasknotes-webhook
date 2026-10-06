@@ -1,0 +1,69 @@
+{
+  "id": "com.selfcommand.tasknotes-webhook",
+  "displayName": "TaskNotes 接入",
+  "description": "Independent integration with durable companion worker.",
+  "version": "0.1.0",
+  "minCoreVersion": "v0.18.6",
+  "permissions": [
+    "db.read",
+    "db.write",
+    "events.subscribe"
+  ],
+  "customPermissions": [
+    {
+      "key": "tasknotes_webhook.read",
+      "label": "View TaskNotes 接入",
+      "scope": "project"
+    },
+    {
+      "key": "tasknotes_webhook.manage",
+      "label": "Manage TaskNotes 接入",
+      "scope": "project"
+    }
+  ],
+  "backend": {
+    "allowedConfigKeys": [
+      "ENCRYPTION_KEY",
+      "PUBLIC_URL"
+    ],
+    "eventSubscriptions": [],
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/health",
+        "public": true
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/status",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "frontend": {
+    "remoteEntryUrl": "/plugins/com.selfcommand.tasknotes-webhook/assets/remoteEntry.js",
+    "extensionPoints": [
+      {
+        "point": "project.settings.tab",
+        "component": "SettingsTab",
+        "label": "TaskNotes 接入",
+        "order": 120,
+        "requiredPermission": "tasknotes_webhook.read"
+      }
+    ]
+  }
+}

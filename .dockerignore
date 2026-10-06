@@ -1,0 +1,6 @@
+.git
+frontend
+release
+secrets
+.env
+.env.*
