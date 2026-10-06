@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS worker_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  secret_enc TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  revision BIGINT NOT NULL DEFAULT 1,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS worker_nonces (
+  nonce TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

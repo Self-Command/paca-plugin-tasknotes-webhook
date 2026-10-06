@@ -5,10 +5,13 @@ import plugin "github.com/Paca-AI/plugin-sdk-go"
 const pluginID = "com.selfcommand.tasknotes-webhook"
 const pluginVersion = "0.1.0"
 
-type integrationPlugin struct{ db *plugin.DB }
+type integrationPlugin struct{ db *plugin.DB; cfg *plugin.Config }
 
 func (p *integrationPlugin) Init(ctx *plugin.Context) error {
 	p.db = ctx.DB()
+	p.cfg = ctx.Config()
+	ctx.Route("POST", "/admin/worker-credential", p.rotateWorkerCredential)
+	ctx.Route("GET", "/worker/control", p.workerControl)
 	ctx.Route("GET", "/health", p.health)
 	ctx.Route("GET", "/projects/:projectId/status", p.status)
 	return nil

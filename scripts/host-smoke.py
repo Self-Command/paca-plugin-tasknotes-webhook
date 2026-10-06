@@ -1,4 +1,4 @@
-import http.cookiejar, json, os, pathlib, secrets, subprocess, time, urllib.request, urllib.error
+import hashlib, hmac, http.cookiejar, json, os, pathlib, secrets, subprocess, time, urllib.request, urllib.error
 
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 manifest=json.loads((ROOT/'plugin.json').read_text())
@@ -23,9 +23,9 @@ cmd(*args)
 jar=http.cookiejar.CookieJar()
 opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 base='http://localhost:18080/api/v1'
-def request(method,path,data=None,expected=200):
+def request(method,path,data=None,expected=200,headers=None):
     body=json.dumps(data).encode() if data is not None else None
-    req=urllib.request.Request(base+path,data=body,method=method,headers={'Content-Type':'application/json'})
+    req=urllib.request.Request(base+path,data=body,method=method,headers={'Content-Type':'application/json',**(headers or {})})
     try:
         with opener.open(req,timeout=20) as r: status,payload=r.status,r.read()
     except urllib.error.HTTPError as e: status,payload=e.code,e.read()
@@ -42,6 +42,15 @@ request('POST','/auth/login',{'username':'admin','password':new_password})
 installed=request('POST','/admin/plugins',{'name':plugin_id,'version':manifest['version'],'manifest':manifest,'enabled':True},201)['data']
 health=request('GET',f'/plugins/{plugin_id}/health')
 assert health['schema_version']==1 and health['id']==plugin_id
+worker_secret=request('POST',f'/plugins/{plugin_id}/admin/worker-credential',{},201)['secret']
+stamp=str(int(time.time()))
+nonce=secrets.token_hex(24)
+signature=hmac.new(worker_secret.encode(),f'GET\n/worker/control\n{stamp}\n{nonce}'.encode(),hashlib.sha256).hexdigest()
+worker_headers={'X-Worker-Timestamp':stamp,'X-Worker-Nonce':nonce,'X-Worker-Signature':signature}
+control=request('GET',f'/plugins/{plugin_id}/worker/control',headers=worker_headers)
+assert control['enabled'] and control['schema_version']==2
+request('GET',f'/plugins/{plugin_id}/worker/control',expected=409,headers=worker_headers)
+request('GET',f'/plugins/{plugin_id}/worker/control',expected=401)
 project=request('POST','/projects',{'name':'Plugin baseline','task_id_prefix':'CI'},201)['data']
 request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/status')
 task=request('POST',f'/projects/{project["id"]}/tasks',{'title':'Official task preserved'},201)['data']
@@ -54,4 +63,23 @@ request('GET',f'/plugins/{plugin_id}/health')
 cmd('docker','restart','paca-ci-api')
 time.sleep(5)
 request('GET',f'/plugins/{plugin_id}/health')
+verification=ROOT/'release/verification'
+verification.mkdir(parents=True,exist_ok=True)
+(ROOT/'release/ci.Caddyfile').write_text(':80 {\n handle /api/* { reverse_proxy paca-ci-api:8080 }\n handle_path /plugins/* { root * /var/www/plugins; file_server }\n handle { reverse_proxy paca-ci-web:80 }\n}\n')
+cmd('docker','run','-d','--name','paca-ci-web','--network','paca-ci','pacaai/paca-web:0.18.6')
+cmd('docker','run','-d','--name','paca-ci-caddy','--network','paca-ci','-p','127.0.0.1:18081:80','-v',f'{ROOT}/release/ci.Caddyfile:/etc/caddy/Caddyfile:ro','-v',f'{ROOT}/release/frontend:/var/www/plugins:ro','caddy:2-alpine')
+from playwright.sync_api import sync_playwright
+with sync_playwright() as pw:
+    browser=pw.chromium.launch()
+    context=browser.new_context(viewport={'width':1440,'height':1000})
+    response=context.request.post('http://localhost:18081/api/v1/auth/login',data={'username':'admin','password':new_password})
+    assert response.ok, 'browser login unsuccessful'
+    page=context.new_page()
+    page.goto(f'http://localhost:18081/projects/{project["id"]}/settings/',wait_until='domcontentloaded')
+    page.get_by_role('button',name=manifest['displayName'],exact=True).last.click(timeout=45000)
+    page.get_by_role('status').filter(has_text='已连接宿主').wait_for(timeout=30000)
+    page.screenshot(path=str(verification/'plugin-settings.png'),full_page=True)
+    browser.close()
+report={'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'worker_hmac':True,'nonce_replay_rejected':True,'frontend_host':True,'task_crud':True,'disable_enable':True,'restart':True}
+(verification/'host-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'task_crud':True,'disable_enable':True,'restart':True}))

@@ -76,8 +76,17 @@ jobs:
         with:
           name: plugin-build
           path: release/
+      - name: Browser runtime
+        run: |
+          pip install playwright==1.55.0
+          playwright install --with-deps chromium
       - name: Official Paca integration
         run: python3 scripts/host-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-verification
+          path: release/verification/
       - name: Diagnostics
         if: failure()
         run: docker logs paca-ci-api --tail 100 || true
