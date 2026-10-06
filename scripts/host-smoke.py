@@ -37,7 +37,7 @@ for _ in range(90):
         break
     except (OSError,RuntimeError): time.sleep(2)
 else: raise RuntimeError('official API did not become ready')
-request('PATCH','/users/me/password',{'current_password':password,'new_password':new_password})
+request('PATCH','/users/me/password',{'current_password':password,'new_password':new_password},204)
 request('POST','/auth/login',{'username':'admin','password':new_password})
 installed=request('POST','/admin/plugins',{'name':plugin_id,'version':manifest['version'],'manifest':manifest,'enabled':True},201)['data']
 health=request('GET',f'/plugins/{plugin_id}/health')
