@@ -16,7 +16,7 @@ for _ in range(50):
     if subprocess.run(['docker','exec','paca-ci-db','pg_isready','-U','postgres'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0: break
     time.sleep(1)
 env={'DATABASE_URL':'postgres://postgres:ci-only-password@paca-ci-db:5432/paca?sslmode=disable','REDIS_URL':'redis://paca-ci-cache:6379','JWT_SECRET':secrets.token_hex(32),'ADMIN_USERNAME':'admin','ADMIN_PASSWORD':password,'ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_URL':'http://localhost:18080','COOKIE_SECURE':'false','PLUGINS_WASM_DIR':'/plugins/wasm','PLUGINS_FRONTEND_DIR':'/plugins/frontend','STORAGE_PROVIDER':'s3','STORAGE_ENDPOINT':'http://paca-ci-storage:9000','STORAGE_ACCESS_KEY_ID':'ci-access-key','STORAGE_SECRET_ACCESS_KEY':'ci-secret-key','AI_AGENT_INTERNAL_KEY':secrets.token_hex(32),'STORAGE_BUCKET':'paca','STORAGE_REGION':'us-east-1'}
-args=['docker','run','-d','--name','paca-ci-api','--network','paca-ci','-p','127.0.0.1:18080:8080','-v',f'{ROOT}/release:/plugins']
+args=['docker','run','-d','--name','paca-ci-api','--network','paca-ci','--network-alias','api','-p','127.0.0.1:18080:8080','-v',f'{ROOT}/release:/plugins']
 for k,v in env.items(): args+=['-e',f'{k}={v}']
 args+=['pacaai/paca-api:0.18.6']
 cmd(*args)
@@ -65,17 +65,23 @@ time.sleep(5)
 request('GET',f'/plugins/{plugin_id}/health')
 verification=ROOT/'verification'
 verification.mkdir(parents=True,exist_ok=True)
-(ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* { reverse_proxy paca-ci-api:8080 }\n handle_path /plugins/* { root * /var/www/plugins; file_server }\n handle { reverse_proxy paca-ci-web:80 }\n}\n')
+(ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* {\n  reverse_proxy paca-ci-api:8080\n }\n handle_path /plugins/* {\n  root * /var/www/plugins\n  file_server\n }\n handle {\n  reverse_proxy paca-ci-web:80\n }\n}\n')
 cmd('docker','run','-d','--name','paca-ci-web','--network','paca-ci','pacaai/paca-web:0.18.6')
 cmd('docker','run','-d','--name','paca-ci-caddy','--network','paca-ci','-p','127.0.0.1:18081:80','-v',f'{ROOT}/ci.Caddyfile:/etc/caddy/Caddyfile:ro','-v',f'{ROOT}/release/frontend:/var/www/plugins:ro','caddy:2-alpine')
+for _ in range(40):
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:18081/api/healthz',timeout=2) as ready:
+            if ready.status==200: break
+    except OSError: time.sleep(0.5)
+else: raise RuntimeError('Caddy did not become ready')
 from playwright.sync_api import sync_playwright
 with sync_playwright() as pw:
     browser=pw.chromium.launch()
     context=browser.new_context(viewport={'width':1440,'height':1000})
-    response=context.request.post('http://localhost:18081/api/v1/auth/login',data={'username':'admin','password':new_password})
+    response=context.request.post('http://127.0.0.1:18081/api/v1/auth/login',data={'username':'admin','password':new_password})
     assert response.ok, 'browser login unsuccessful'
     page=context.new_page()
-    page.goto(f'http://localhost:18081/projects/{project["id"]}/settings/',wait_until='domcontentloaded')
+    page.goto(f'http://127.0.0.1:18081/projects/{project["id"]}/settings/',wait_until='domcontentloaded')
     page.get_by_role('button',name=manifest['displayName'],exact=True).last.click(timeout=45000)
     page.get_by_role('status').filter(has_text='已连接宿主').wait_for(timeout=30000)
     page.screenshot(path=str(verification/'plugin-settings.png'),full_page=True)
