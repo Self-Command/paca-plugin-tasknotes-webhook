@@ -23,6 +23,7 @@ func TestPrecisionAndDST(t *testing.T) {
 	}{
 		{"2026-10-07", "Asia/Shanghai", "day", false},
 		{"2026-10-07T09:10", "Asia/Shanghai", "instant", false},
+		{"2026-10-07T09:10:00.000", "Asia/Shanghai", "instant", false},
 		{"2026-10-07T09:10:00+08:00", "Asia/Shanghai", "instant", false},
 		{"2026-11-01T01:30", "America/New_York", "", true},
 		{"2026-03-08T02:30", "America/New_York", "", true},

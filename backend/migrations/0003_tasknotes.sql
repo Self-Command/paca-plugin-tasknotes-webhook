@@ -11,6 +11,7 @@ CREATE TABLE inbox (
  delivery_id TEXT NOT NULL, body JSONB NOT NULL, body_hash TEXT NOT NULL, event TEXT NOT NULL,
  state TEXT NOT NULL DEFAULT 'pending', error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
  next_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW(), received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ lease_owner TEXT, lease_until TIMESTAMPTZ,
  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(connection_id,delivery_id)
 );
 CREATE INDEX inbox_pending ON inbox(state,next_attempt,id);

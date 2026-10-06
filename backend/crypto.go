@@ -89,8 +89,7 @@ func (p *integrationPlugin) encryptionKey() (string, error) {
 }
 
 // encrypt encrypts plaintext with the configured AES key.
-// Returns "" unencrypted when no key is configured, so the plugin still
-// works (without secret signing) in environments without ENCRYPTION_KEY.
+// Missing or invalid encryption configuration fails closed.
 func (p *integrationPlugin) encrypt(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil

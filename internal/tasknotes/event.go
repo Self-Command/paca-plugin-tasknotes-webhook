@@ -114,12 +114,13 @@ func ParseDate(s, zone string) (Date, error) {
 	}
 	for _, layout := range []string{"2006-01-02T15:04:05.999999999", "2006-01-02T15:04"} {
 		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
-			if t.In(loc).Format(layout) != s {
+			wall, parseErr := time.Parse(layout, s)
+			if parseErr != nil || t.In(loc).Format("2006-01-02T15:04:05.999999999") != wall.Format("2006-01-02T15:04:05.999999999") {
 				continue
 			}
 			// A local wall time can occur twice during DST. Require an offset in that case.
 			for _, delta := range []time.Duration{-2 * time.Hour, -time.Hour, time.Hour, 2 * time.Hour} {
-				if t.Add(delta).In(loc).Format(layout) == s {
+				if t.Add(delta).In(loc).Format("2006-01-02T15:04:05.999999999") == wall.Format("2006-01-02T15:04:05.999999999") {
 					return Date{}, errors.New("ambiguous local time; supply UTC offset")
 				}
 			}

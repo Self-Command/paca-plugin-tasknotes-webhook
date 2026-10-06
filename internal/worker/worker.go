@@ -33,6 +33,8 @@ type Worker struct {
 	HTTP             *http.Client
 }
 type apiError struct{ Code int }
+type associationConflict struct{ message string }
+func (e associationConflict) Error() string { return e.message }
 
 func (e apiError) Error() string { return fmt.Sprintf("Paca API HTTP %d", e.Code) }
 func readSecret(name string) (string, error) {
@@ -157,11 +159,13 @@ type task struct {
 }
 
 func (w *Worker) Tick(ctx context.Context) error {
+	ctx,cancel:=context.WithTimeout(ctx,45*time.Second)
+	defer cancel()
 	if err := w.control(ctx); err != nil {
 		return err
 	}
 	var connectionID string
-	err := w.DB.QueryRow(ctx, "SELECT i.connection_id::text FROM inbox i JOIN connections c ON c.id=i.connection_id WHERE c.enabled AND i.state IN ('pending','error','uncertain') AND i.next_attempt<=NOW() ORDER BY i.id LIMIT 1").Scan(&connectionID)
+	err := w.DB.QueryRow(ctx, "SELECT i.connection_id::text FROM inbox i JOIN connections c ON c.id=i.connection_id WHERE c.enabled AND i.state IN ('pending','error','uncertain') AND i.next_attempt<=NOW() AND (i.lease_until IS NULL OR i.lease_until<NOW()) ORDER BY i.id LIMIT 1").Scan(&connectionID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -186,19 +190,24 @@ func (w *Worker) Tick(ctx context.Context) error {
 	}
 	var id int64
 	var raw []byte
-	err = w.DB.QueryRow(ctx, "SELECT id,body FROM inbox WHERE connection_id=$1 AND state IN ('pending','error','uncertain') AND next_attempt<=NOW() ORDER BY id LIMIT 1", connectionID).Scan(&id, &raw)
+	lease:=make([]byte,24);if _,err=rand.Read(lease);err!=nil{return err}
+	owner:=hex.EncodeToString(lease)
+	err = w.DB.QueryRow(ctx, "UPDATE inbox SET lease_owner=$2,lease_until=NOW()+INTERVAL '60 seconds' WHERE id=(SELECT id FROM inbox WHERE connection_id=$1 AND state IN ('pending','error','uncertain') AND next_attempt<=NOW() AND (lease_until IS NULL OR lease_until<NOW()) ORDER BY id LIMIT 1) RETURNING id,body", connectionID,owner).Scan(&id, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	defer func(){releaseCtx,releaseCancel:=context.WithTimeout(context.Background(),3*time.Second);defer releaseCancel();_,_=w.DB.Exec(releaseCtx,"UPDATE inbox SET lease_owner=NULL,lease_until=NULL WHERE id=$1 AND lease_owner=$2",id,owner)}()
 	e, err := tasknotes.Decode(raw)
 	if err != nil {
 		return w.finish(ctx, id, "conflict", "invalid stored envelope")
 	}
 	s, err := w.resolve(ctx, c, e)
 	if err != nil {
+		var conflict associationConflict
+		if errors.As(err, &conflict) { return w.finish(ctx, id, "conflict", conflict.Error()) }
 		return err
 	}
 	version := e.Version()
@@ -289,7 +298,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 		err = w.call(ctx, "POST", root, payload, &created)
 		if err != nil || created.ID == "" {
 			var ae apiError
-			if errors.As(err, &ae) && ae.Code >= 400 && ae.Code < 500 {
+			if errors.As(err, &ae) && (ae.Code == 400 || ae.Code == 401 || ae.Code == 403 || ae.Code == 404 || ae.Code == 422) {
 				_, _ = w.DB.Exec(ctx, "UPDATE sources SET state='new' WHERE id=$1", s.ID)
 				return w.finish(ctx, id, "error", err.Error())
 			}
@@ -314,6 +323,12 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 	path := e.Data.Task.Path
 	var sid int64
 	err = tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), path).Scan(&sid)
+	if err == nil && e.Data.Previous != nil && e.Data.Previous.Path != path {
+		var oldID int64
+		oldErr := tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), e.Data.Previous.Path).Scan(&oldID)
+		if oldErr == nil && oldID != sid { return source{}, associationConflict{"rename would merge two sources; manual resolution required"} }
+		if oldErr != nil && !errors.Is(oldErr, pgx.ErrNoRows) { return source{}, oldErr }
+	}
 	if errors.Is(err, pgx.ErrNoRows) && e.Data.Previous != nil && e.Data.Previous.Path != path {
 		err = tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), e.Data.Previous.Path).Scan(&sid)
 	}
