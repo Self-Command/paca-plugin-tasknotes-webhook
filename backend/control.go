@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	plugin "github.com/Paca-AI/plugin-sdk-go"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -56,8 +57,8 @@ func (p *integrationPlugin) workerControl(req *plugin.Request, res *plugin.Respo
 		res.Error(503, "credential unavailable")
 		return
 	}
-	nonce := req.Headers["x-worker-nonce"]
-	if !validWorkerSignature(secret, req.Headers["x-worker-timestamp"], nonce, req.Headers["x-worker-signature"], time.Now()) {
+	nonce := requestHeader(req, "x-worker-nonce")
+	if !validWorkerSignature(secret, requestHeader(req, "x-worker-timestamp"), nonce, requestHeader(req, "x-worker-signature"), time.Now()) {
 		res.Error(401, "invalid worker signature")
 		return
 	}
@@ -75,4 +76,13 @@ func (p *integrationPlugin) workerControl(req *plugin.Request, res *plugin.Respo
 		return
 	}
 	res.JSON(200, map[string]any{"id": pluginID, "version": pluginVersion, "schema_version": 2, "enabled": row.Rows[0][1], "revision": row.Rows[0][2]})
+}
+
+func requestHeader(req *plugin.Request, name string) string {
+	for key, value := range req.Headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
 }
