@@ -159,7 +159,7 @@ type task struct {
 }
 
 func (w *Worker) Tick(ctx context.Context) error {
-	ctx,cancel:=context.WithTimeout(ctx,45*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	if err := w.control(ctx); err != nil {
 		return err
@@ -190,16 +190,23 @@ func (w *Worker) Tick(ctx context.Context) error {
 	}
 	var id int64
 	var raw []byte
-	lease:=make([]byte,24);if _,err=rand.Read(lease);err!=nil{return err}
-	owner:=hex.EncodeToString(lease)
-	err = w.DB.QueryRow(ctx, "UPDATE inbox SET lease_owner=$2,lease_until=NOW()+INTERVAL '60 seconds' WHERE id=(SELECT id FROM inbox WHERE connection_id=$1 AND state IN ('pending','error','uncertain') AND next_attempt<=NOW() AND (lease_until IS NULL OR lease_until<NOW()) ORDER BY id LIMIT 1) RETURNING id,body", connectionID,owner).Scan(&id, &raw)
+	lease := make([]byte, 24)
+	if _, err = rand.Read(lease); err != nil {
+		return err
+	}
+	owner := hex.EncodeToString(lease)
+	err = w.DB.QueryRow(ctx, "UPDATE inbox SET lease_owner=$2,lease_until=NOW()+INTERVAL '60 seconds' WHERE id=(SELECT id FROM inbox WHERE connection_id=$1 AND state IN ('pending','error','uncertain') AND next_attempt<=NOW() AND (lease_until IS NULL OR lease_until<NOW()) ORDER BY id LIMIT 1) RETURNING id,body", connectionID, owner).Scan(&id, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer func(){releaseCtx,releaseCancel:=context.WithTimeout(context.Background(),3*time.Second);defer releaseCancel();_,_=w.DB.Exec(releaseCtx,"UPDATE inbox SET lease_owner=NULL,lease_until=NULL WHERE id=$1 AND lease_owner=$2",id,owner)}()
+	defer func() {
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer releaseCancel()
+		_, _ = w.DB.Exec(releaseCtx, "UPDATE inbox SET lease_owner=NULL,lease_until=NULL WHERE id=$1 AND lease_owner=$2", id, owner)
+	}()
 	e, err := tasknotes.Decode(raw)
 	if err != nil {
 		return w.finish(ctx, id, "conflict", "invalid stored envelope")
@@ -207,7 +214,9 @@ func (w *Worker) Tick(ctx context.Context) error {
 	s, err := w.resolve(ctx, c, e)
 	if err != nil {
 		var conflict associationConflict
-		if errors.As(err, &conflict) { return w.finish(ctx, id, "conflict", conflict.Error()) }
+		if errors.As(err, &conflict) {
+			return w.finish(ctx, id, "conflict", conflict.Error())
+		}
 		return err
 	}
 	version := e.Version()
@@ -326,8 +335,12 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 	if err == nil && e.Data.Previous != nil && e.Data.Previous.Path != path {
 		var oldID int64
 		oldErr := tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), e.Data.Previous.Path).Scan(&oldID)
-		if oldErr == nil && oldID != sid { return source{}, associationConflict{"rename would merge two sources; manual resolution required"} }
-		if oldErr != nil && !errors.Is(oldErr, pgx.ErrNoRows) { return source{}, oldErr }
+		if oldErr == nil && oldID != sid {
+			return source{}, associationConflict{"rename would merge two sources; manual resolution required"}
+		}
+		if oldErr != nil && !errors.Is(oldErr, pgx.ErrNoRows) {
+			return source{}, oldErr
+		}
 	}
 	if errors.Is(err, pgx.ErrNoRows) && e.Data.Previous != nil && e.Data.Previous.Path != path {
 		err = tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), e.Data.Previous.Path).Scan(&sid)
