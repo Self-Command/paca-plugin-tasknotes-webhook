@@ -23,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer w.DB.Close(context.Background())
+	defer func() { _ = w.DB.Close(context.Background()) }()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -31,6 +31,14 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if w.DB.IsClosed() {
+				replacement, connectErr := worker.New(ctx)
+				if connectErr != nil {
+					log.Print("database reconnect pending")
+					continue
+				}
+				w = replacement
+			}
 			if err = w.Tick(ctx); err != nil {
 				log.Printf("processing paused: %v", err)
 			}
