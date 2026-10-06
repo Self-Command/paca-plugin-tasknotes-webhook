@@ -50,6 +50,7 @@ def send_official(index,expected=202,delivery_override=None,raw_override=None):
     fixture=fixtures['deliveries'][index]
     raw=(raw_override or fixture['body']).encode()
     headers={**fixture['headers'],'X-TaskNotes-Signature':hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest()}
+    headers['X-TaskNotes-Event']=json.loads(raw)['event']
     if delivery_override: headers['X-TaskNotes-Delivery-ID']=delivery_override
     req=urllib.request.Request(base+f'/plugins/{plugin_id}/receive/{connection_id}',data=raw,method='POST',headers=headers)
     try:
