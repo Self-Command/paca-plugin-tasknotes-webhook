@@ -65,7 +65,7 @@ time.sleep(5)
 request('GET',f'/plugins/{plugin_id}/health')
 verification=ROOT/'verification'
 verification.mkdir(parents=True,exist_ok=True)
-(ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* {\n  reverse_proxy paca-ci-api:8080\n }\n handle_path /plugins/* {\n  root * /var/www/plugins\n  file_server\n }\n handle {\n  reverse_proxy paca-ci-web:80\n }\n}\n')
+(ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* {\n  reverse_proxy paca-ci-api:8080\n }\n handle_path /plugins/* {\n  root * /var/www/plugins\n  file_server\n }\n handle {\n  reverse_proxy paca-ci-web:3000\n }\n}\n')
 cmd('docker','run','-d','--name','paca-ci-web','--network','paca-ci','pacaai/paca-web:0.18.6')
 cmd('docker','run','-d','--name','paca-ci-caddy','--network','paca-ci','-p','127.0.0.1:18081:80','-v',f'{ROOT}/ci.Caddyfile:/etc/caddy/Caddyfile:ro','-v',f'{ROOT}/release/frontend:/var/www/plugins:ro','caddy:2-alpine')
 for _ in range(40):
