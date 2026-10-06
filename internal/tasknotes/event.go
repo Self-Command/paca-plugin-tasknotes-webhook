@@ -60,16 +60,30 @@ func Decode(raw []byte) (Envelope, error) {
 		return e, errors.New("invalid event timestamp")
 	}
 	e.Data.Task.Path = NormalizePath(e.Data.Task.Path)
-	if e.Data.Previous != nil { e.Data.Previous.Path = NormalizePath(e.Data.Previous.Path) }
+	if e.Data.Previous != nil {
+		e.Data.Previous.Path = NormalizePath(e.Data.Previous.Path)
+	}
 	return e, nil
 }
-func NormalizePath(s string) string { return path.Clean(strings.ReplaceAll(s,"\\","/")) }
+func NormalizePath(s string) string { return path.Clean(strings.ReplaceAll(s, "\\", "/")) }
 func CleanText(s string) string {
-	return strings.TrimSpace(strings.Map(func(r rune) rune {if unicode.IsControl(r){return -1};return r},s))
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
 }
 func NormalizeTags(tags []string) []string {
-	result:=[]string{};seen:=map[string]bool{}
-	for _,value:=range tags { tag:=strings.TrimPrefix(CleanText(value),"#");if tag!=""&&!seen[tag]{seen[tag]=true;result=append(result,tag)} }
+	result := []string{}
+	seen := map[string]bool{}
+	for _, value := range tags {
+		tag := strings.TrimPrefix(CleanText(value), "#")
+		if tag != "" && !seen[tag] {
+			seen[tag] = true
+			result = append(result, tag)
+		}
+	}
 	return result
 }
 func ValidSignature(raw []byte, secret, signature string) bool {

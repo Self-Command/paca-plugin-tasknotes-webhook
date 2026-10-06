@@ -20,6 +20,7 @@ jobs:
           go-version: '1.24'
       - name: Go checks
         run: |
+          printf 'package buildinfo\nfunc init() { SourceSHA = "%s" }\n' "$GITHUB_SHA" > internal/buildinfo/stamp.go
           go mod tidy
           gofmt -w backend cmd internal
           git diff -- backend cmd internal go.mod go.sum > gofmt.patch
@@ -88,6 +89,7 @@ jobs:
           playwright install --with-deps chromium
       - name: Official Paca integration
         run: |
+          printf 'package buildinfo\nfunc init() { SourceSHA = "%s" }\n' "$GITHUB_SHA" > internal/buildinfo/stamp.go
           go build -trimpath -o /tmp/tasknotes-worker ./cmd/worker
           bun scripts/tasknotes-fixture.ts
           python3 scripts/host-smoke.py
@@ -126,6 +128,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: SOURCE_SHA=${{ github.sha }}
           tags: ghcr.io/self-command/${{ github.event.repository.name }}-worker:sha-${{ github.sha }}
       - name: Release
         env:

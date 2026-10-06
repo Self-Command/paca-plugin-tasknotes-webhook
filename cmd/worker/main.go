@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/worker"
 	"log"
 	"os"
@@ -13,7 +14,7 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"plugin": worker.PluginID, "version": worker.Version, "phase": "tasknotes-integration"})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"plugin": worker.PluginID, "version": worker.Version, "source_sha": buildinfo.SourceSHA, "phase": "tasknotes-integration"})
 		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

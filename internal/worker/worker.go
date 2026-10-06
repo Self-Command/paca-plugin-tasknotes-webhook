@@ -19,12 +19,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"github.com/jackc/pgx/v5"
 )
 
 const PluginID = "com.selfcommand.tasknotes-webhook"
-const Version = "0.1.0"
+const Version = buildinfo.Version
 const Schema = "plugin_data_com_selfcommand_tasknotes_webhook"
 
 type Worker struct {
@@ -97,8 +98,9 @@ func (w *Worker) control(ctx context.Context) error {
 		Version string `json:"version"`
 		Schema  int    `json:"schema_version"`
 		Enabled bool   `json:"enabled"`
+		Source  string `json:"source_sha"`
 	}
-	if r.StatusCode != 200 || json.NewDecoder(io.LimitReader(r.Body, 65536)).Decode(&c) != nil || !c.Enabled || c.ID != PluginID || c.Version != Version || c.Schema != 3 {
+	if r.StatusCode != 200 || json.NewDecoder(io.LimitReader(r.Body, 65536)).Decode(&c) != nil || !c.Enabled || c.ID != PluginID || c.Version != Version || c.Schema != 3 || len(buildinfo.SourceSHA) != 40 || c.Source != buildinfo.SourceSHA {
 		return errors.New("host disabled or worker version/schema mismatch")
 	}
 	return nil
@@ -442,14 +444,14 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 			seen[tag] = true
 		}
 	}
-	metadata := map[string]any{"version": 1, "source": "tasknotes", "archived": t.Archived || e.Event == "task.archived", "recurring": t.Recurrence != nil, "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value,"start_source":t.Scheduled,"due_source":t.Due}
+	metadata := map[string]any{"version": 1, "source": "tasknotes", "archived": t.Archived || e.Event == "task.archived", "recurring": t.Recurrence != nil, "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value, "start_source": t.Scheduled, "due_source": t.Due}
 	payload := map[string]any{"title": title, "start_date": start.Value, "due_date": due.Value, "importance": priority, "tags": tags, "custom_fields": map[string]any{"_integration_ref_v1": s.Ref, "_integration_state_v1": metadata}}
 	if t.Details != nil {
-		blocks:=[]any{}
-		for _,line:=range strings.Split(*t.Details,"\n") {
-			blocks=append(blocks,map[string]any{"type":"paragraph","content":[]any{map[string]any{"type":"text","text":strings.TrimSuffix(line,"\r"),"styles":map[string]any{}}},"children":[]any{}})
+		blocks := []any{}
+		for _, line := range strings.Split(*t.Details, "\n") {
+			blocks = append(blocks, map[string]any{"type": "paragraph", "content": []any{map[string]any{"type": "text", "text": strings.TrimSuffix(line, "\r"), "styles": map[string]any{}}}, "children": []any{}})
 		}
-		payload["description"]=blocks
+		payload["description"] = blocks
 	}
 	var statuses struct {
 		Items []struct {
@@ -462,14 +464,21 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 	}
 	mapped := c.Statuses[t.Status]
 	completed := e.Event == "task.completed" || strings.EqualFold(t.Status, "done") || strings.EqualFold(t.Status, "completed")
-	category:="todo"
+	category := "todo"
 	switch strings.ToLower(t.Status) {
-	case "","none","open":
-	case "in-progress": category="inprogress"
-	case "done","completed": category="done"
-	default: if mapped==""&&!completed{return nil,errors.New("unknown TaskNotes status; configure project status mapping")}
+	case "", "none", "open":
+	case "in-progress":
+		category = "inprogress"
+	case "done", "completed":
+		category = "done"
+	default:
+		if mapped == "" && !completed {
+			return nil, errors.New("unknown TaskNotes status; configure project status mapping")
+		}
 	}
-	if completed{category="done"}
+	if completed {
+		category = "done"
+	}
 	for _, st := range statuses.Items {
 		if mapped != "" && st.ID == mapped {
 			payload["status_id"] = mapped

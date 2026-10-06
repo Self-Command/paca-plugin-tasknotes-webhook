@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	plugin "github.com/Paca-AI/plugin-sdk-go"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
 	"strconv"
 	"strings"
 	"time"
@@ -75,7 +76,7 @@ func (p *integrationPlugin) workerControl(req *plugin.Request, res *plugin.Respo
 		res.Error(409, "worker request already used")
 		return
 	}
-	res.JSON(200, map[string]any{"id": pluginID, "version": pluginVersion, "schema_version": 3, "enabled": row.Rows[0][1], "revision": row.Rows[0][2]})
+	res.JSON(200, map[string]any{"id": pluginID, "version": pluginVersion, "source_sha": buildinfo.SourceSHA, "schema_version": 3, "enabled": row.Rows[0][1], "revision": row.Rows[0][2]})
 }
 
 func requestHeader(req *plugin.Request, name string) string {

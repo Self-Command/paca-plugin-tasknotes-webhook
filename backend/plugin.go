@@ -1,9 +1,12 @@
 package main
 
-import plugin "github.com/Paca-AI/plugin-sdk-go"
+import (
+	plugin "github.com/Paca-AI/plugin-sdk-go"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
+)
 
 const pluginID = "com.selfcommand.tasknotes-webhook"
-const pluginVersion = "0.1.0"
+const pluginVersion = buildinfo.Version
 
 type integrationPlugin struct {
 	db  *plugin.DB
@@ -35,7 +38,7 @@ func (p *integrationPlugin) health(req *plugin.Request, res *plugin.Response) {
 		res.Error(503, "plugin migration unavailable")
 		return
 	}
-	res.JSON(200, map[string]any{"id": pluginID, "version": pluginVersion, "schema_version": result.Rows[0][0], "phase": "tasknotes-integration"})
+	res.JSON(200, map[string]any{"id": pluginID, "version": pluginVersion, "source_sha": buildinfo.SourceSHA, "schema_version": result.Rows[0][0], "phase": "tasknotes-integration"})
 }
 func (p *integrationPlugin) status(req *plugin.Request, res *plugin.Response) {
 	rows, err := p.db.Query("SELECT COUNT(*) FROM connections WHERE project_id=$1", req.PathParam("projectId"))
