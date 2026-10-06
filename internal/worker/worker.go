@@ -328,17 +328,27 @@ func (w *Worker) Tick(ctx context.Context) error {
 }
 func sourceForPath(ctx context.Context, tx pgx.Tx, connectionID, path string) (int64, error) {
 	rows, err := tx.Query(ctx, "SELECT DISTINCT source_id FROM path_aliases WHERE connection_id=$1 AND path=$2", connectionID, path)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	defer rows.Close()
 	var id int64
 	count := 0
 	for rows.Next() {
-		if err = rows.Scan(&id); err != nil { return 0, err }
+		if err = rows.Scan(&id); err != nil {
+			return 0, err
+		}
 		count++
 	}
-	if err = rows.Err(); err != nil { return 0, err }
-	if count == 0 { return 0, pgx.ErrNoRows }
-	if count != 1 { return 0, associationConflict{"legacy vault paths map to multiple tasks; manual resolution required"} }
+	if err = rows.Err(); err != nil {
+		return 0, err
+	}
+	if count == 0 {
+		return 0, pgx.ErrNoRows
+	}
+	if count != 1 {
+		return 0, associationConflict{"legacy vault paths map to multiple tasks; manual resolution required"}
+	}
 	return id, nil
 }
 func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope) (source, error) {

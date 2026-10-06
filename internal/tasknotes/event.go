@@ -95,7 +95,8 @@ func ValidSignature(raw []byte, secret, signature string) bool {
 	mac.Write(raw)
 	return hmac.Equal(received, mac.Sum(nil))
 }
-func Hash(raw []byte) string        { h := sha256.Sum256(raw); return hex.EncodeToString(h[:]) }
+func Hash(raw []byte) string { h := sha256.Sum256(raw); return hex.EncodeToString(h[:]) }
+
 // A paired connection identifies the vault. Its machine-specific absolute path
 // must not create a second task when the same vault moves to another computer.
 func (e Envelope) VaultKey() string { return "connection" }
