@@ -38,7 +38,10 @@ func (p *integrationPlugin) health(req *plugin.Request, res *plugin.Response) {
 	res.JSON(200, map[string]any{"id": pluginID, "version": pluginVersion, "schema_version": result.Rows[0][0], "phase": "tasknotes-integration"})
 }
 func (p *integrationPlugin) status(req *plugin.Request, res *plugin.Response) {
-	rows,err:=p.db.Query("SELECT COUNT(*) FROM connections WHERE project_id=$1",req.PathParam("projectId"))
-	if err!=nil||len(rows.Rows)!=1 {res.Error(503,"configuration unavailable");return}
+	rows, err := p.db.Query("SELECT COUNT(*) FROM connections WHERE project_id=$1", req.PathParam("projectId"))
+	if err != nil || len(rows.Rows) != 1 {
+		res.Error(503, "configuration unavailable")
+		return
+	}
 	res.JSON(200, map[string]any{"project_id": req.PathParam("projectId"), "connections": rows.Rows[0][0], "phase": "tasknotes-integration"})
 }

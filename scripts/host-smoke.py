@@ -63,6 +63,7 @@ request('GET',f'/plugins/{plugin_id}/health')
 cmd('docker','restart','paca-ci-api')
 time.sleep(5)
 request('GET',f'/plugins/{plugin_id}/health')
+exec((ROOT/'scripts/tasknotes-integration.py').read_text(),globals())
 verification=ROOT/'verification'
 verification.mkdir(parents=True,exist_ok=True)
 (ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* {\n  reverse_proxy paca-ci-api:8080\n }\n handle_path /plugins/* {\n  root * /var/www/plugins\n  file_server\n }\n handle {\n  reverse_proxy paca-ci-web:3000\n }\n}\n')
