@@ -20,9 +20,9 @@ jobs:
           go-version: '1.24'
       - name: Go checks
         run: |
-          go mod download
-          gofmt -w backend cmd
-          git diff -- backend cmd > gofmt.patch
+          go mod tidy
+          gofmt -w backend cmd internal
+          git diff -- backend cmd internal go.mod go.sum > gofmt.patch
           go vet ./...
           go test -race ./...
       - uses: actions/upload-artifact@v4
@@ -66,7 +66,7 @@ jobs:
           name: plugin-build
           path: release/
       - name: Strict formatting
-        run: git diff --exit-code -- backend cmd
+        run: git diff --exit-code -- backend cmd internal go.mod go.sum
   compatibility:
     needs: build
     runs-on: ubuntu-24.04
@@ -125,5 +125,5 @@ jobs:
         run: |
           printf '%s\n' "ghcr.io/self-command/${GITHUB_REPOSITORY#*/}-worker@$IMAGE_DIGEST" > release/assets/image-digest.txt
           tag="v0.1.0-dev.${GITHUB_RUN_NUMBER}"
-          printf '%s\n' 'Phase-0 host compatibility baseline; business functionality is not yet implemented.' "Source: $GITHUB_SHA" "Worker: $IMAGE_DIGEST" > /tmp/notes.md
+          printf '%s\n' 'TaskNotes integration candidate; review host verification report before deployment.' "Source: $GITHUB_SHA" "Worker: $IMAGE_DIGEST" > /tmp/notes.md
           gh release create "$tag" release/assets/* --target "$GITHUB_SHA" --title "$tag" --prerelease --notes-file /tmp/notes.md

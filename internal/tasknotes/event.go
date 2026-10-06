@@ -1,0 +1,77 @@
+// Package tasknotes defines the official 4.13.8 webhook envelope, without changing TaskNotes.
+package tasknotes
+
+import (
+ "crypto/hmac"
+ "crypto/sha256"
+ "encoding/hex"
+ "encoding/json"
+ "errors"
+ "strings"
+ "time"
+ _ "time/tzdata"
+)
+
+type Task struct {
+ ID string `json:"id"`
+ Path string `json:"path"`
+ Title string `json:"title"`
+ Status string `json:"status"`
+ Priority string `json:"priority"`
+ Scheduled string `json:"scheduled"`
+ Due string `json:"due"`
+ Archived bool `json:"archived"`
+ Tags []string `json:"tags"`
+ DateModified string `json:"dateModified"`
+ Recurrence any `json:"recurrence"`
+}
+type Envelope struct {
+ Event string `json:"event"`
+ Timestamp string `json:"timestamp"`
+ Vault struct { Name string `json:"name"`; Path string `json:"path"` } `json:"vault"`
+ Data struct { Task Task `json:"task"`; Previous *Task `json:"previous,omitempty"` } `json:"data"`
+}
+func AllowedEvent(event string) bool {
+ switch event { case "task.created","task.updated","task.completed","task.deleted","task.archived","task.unarchived": return true }; return false
+}
+func Decode(raw []byte) (Envelope,error) {
+ var e Envelope
+ if len(raw)>1024*1024 || json.Unmarshal(raw,&e)!=nil { return e,errors.New("invalid webhook JSON or size") }
+ if !AllowedEvent(e.Event) || strings.TrimSpace(e.Data.Task.Path)=="" || strings.TrimSpace(e.Data.Task.Title)=="" || e.Vault.Name=="" { return e,errors.New("unsupported event or missing task/vault identity") }
+ if _,err:=time.Parse(time.RFC3339Nano,e.Timestamp); err!=nil { return e,errors.New("invalid event timestamp") }
+ return e,nil
+}
+func ValidSignature(raw []byte,secret,signature string) bool {
+ received,err:=hex.DecodeString(signature); if err!=nil || len(received)!=32 { return false }
+ mac:=hmac.New(sha256.New,[]byte(secret)); mac.Write(raw); return hmac.Equal(received,mac.Sum(nil))
+}
+func Hash(raw []byte) string { h:=sha256.Sum256(raw); return hex.EncodeToString(h[:]) }
+func (e Envelope) VaultKey() string { return Hash([]byte(e.Vault.Name+"\n"+e.Vault.Path)) }
+func (e Envelope) Version() time.Time {
+ // dateModified is not a monotonic TaskNotes revision; ties remain visible conflicts.
+ if t,err:=time.Parse(time.RFC3339Nano,e.Data.Task.DateModified);err==nil { return t }
+ t,_:=time.Parse(time.RFC3339Nano,e.Timestamp);return t
+}
+func (e Envelope) SnapshotHash() string {
+ kind:="live";if e.Event=="task.deleted"{kind="deleted"};if e.Event=="task.archived"||e.Data.Task.Archived{kind="archived"}
+ b,_:=json.Marshal(e.Data.Task);return Hash(append([]byte(kind+"\n"),b...))
+}
+
+type Date struct { Value any; Precision string }
+func ParseDate(s,zone string) (Date,error) {
+ if s=="" { return Date{nil,"missing"},nil }
+ loc,err:=time.LoadLocation(zone);if err!=nil { return Date{},errors.New("invalid timezone") }
+ if t,err:=time.Parse(time.RFC3339Nano,s);err==nil { return Date{t.UTC().Format(time.RFC3339Nano),"instant"},nil }
+ if len(s)==10 { t,err:=time.ParseInLocation("2006-01-02",s,loc); if err!=nil { return Date{},err };return Date{t.UTC().Format(time.RFC3339Nano),"day"},nil }
+ for _,layout:=range []string{"2006-01-02T15:04:05.999999999","2006-01-02T15:04"} {
+  if t,err:=time.ParseInLocation(layout,s,loc);err==nil {
+   if t.In(loc).Format(layout)!=s { continue }
+   // A local wall time can occur twice during DST. Require an offset in that case.
+   for _,delta:=range []time.Duration{-2*time.Hour,-time.Hour,time.Hour,2*time.Hour} {
+    if t.Add(delta).In(loc).Format(layout)==s {return Date{},errors.New("ambiguous local time; supply UTC offset")}
+   }
+   return Date{t.UTC().Format(time.RFC3339Nano),"instant"},nil
+  }
+ }
+ return Date{},errors.New("invalid local time or missing UTC offset")
+}

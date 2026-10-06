@@ -41,14 +41,14 @@ request('PATCH','/users/me/password',{'current_password':password,'new_password'
 request('POST','/auth/login',{'username':'admin','password':new_password})
 installed=request('POST','/admin/plugins',{'name':plugin_id,'version':manifest['version'],'manifest':manifest,'enabled':True},201)['data']
 health=request('GET',f'/plugins/{plugin_id}/health')
-assert health['schema_version']==1 and health['id']==plugin_id
+assert health['schema_version']==3 and health['id']==plugin_id
 worker_secret=request('POST',f'/plugins/{plugin_id}/admin/worker-credential',{},201)['secret']
 stamp=str(int(time.time()))
 nonce=secrets.token_hex(24)
 signature=hmac.new(worker_secret.encode(),f'GET\n/worker/control\n{stamp}\n{nonce}'.encode(),hashlib.sha256).hexdigest()
 worker_headers={'X-Worker-Timestamp':stamp,'X-Worker-Nonce':nonce,'X-Worker-Signature':signature}
 control=request('GET',f'/plugins/{plugin_id}/worker/control',headers=worker_headers)
-assert control['enabled'] and control['schema_version']==2
+assert control['enabled'] and control['schema_version']==3
 request('GET',f'/plugins/{plugin_id}/worker/control',expected=409,headers=worker_headers)
 request('GET',f'/plugins/{plugin_id}/worker/control',expected=401)
 project=request('POST','/projects',{'name':'Plugin baseline','task_id_prefix':'CI'},201)['data']

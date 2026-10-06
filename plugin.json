@@ -80,10 +80,170 @@
         "method": "GET",
         "path": "/worker/control",
         "public": true
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/connections",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/projects/:projectId/connections",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "PATCH",
+        "path": "/projects/:projectId/connections/:id",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/projects/:projectId/connections/:id/rotate-secret",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/connections/:id/deliveries",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/connections/:id/sources",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/projects/:projectId/connections/:id/reprocess/:deliveryId",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/projects/:projectId/connections/:id/link",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/receive/:id",
+        "public": true
       }
     ],
     "sensitiveFields": {
       "worker_settings": [
+        "secret_enc"
+      ],
+      "connections": [
         "secret_enc"
       ]
     }

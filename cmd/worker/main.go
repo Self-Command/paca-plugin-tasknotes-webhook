@@ -1,16 +1,23 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
+	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/worker"
 )
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"plugin": "com.selfcommand.tasknotes-webhook", "version": "0.1.0", "phase": "host-baseline"})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"plugin": worker.PluginID, "version": worker.Version, "phase": "tasknotes-integration"})
 		return
 	}
-	fmt.Fprintln(os.Stderr, "Companion worker processing is not yet configured in the phase-0 baseline.")
-	os.Exit(78)
+	ctx,stop:=signal.NotifyContext(context.Background(),syscall.SIGINT,syscall.SIGTERM);defer stop()
+	w,err:=worker.New(ctx);if err!=nil{log.Fatal(err)};defer w.DB.Close(context.Background())
+	ticker:=time.NewTicker(2*time.Second);defer ticker.Stop()
+	for {select {case <-ctx.Done():return;case <-ticker.C:if err=w.Tick(ctx);err!=nil{log.Printf("processing paused: %v",err)}}}
 }
