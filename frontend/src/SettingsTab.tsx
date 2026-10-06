@@ -49,7 +49,7 @@ export default function SettingsTab({projectId,canEdit=true}: {projectId:string;
       <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">连接名称<input className={inputClass} value={name} onChange={e=>setName(e.target.value)}/></label><label className="text-sm">时区<input className={inputClass} value={timezone} onChange={e=>setTimezone(e.target.value)}/></label></div>
       {selected&&<><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>启用接收和导入</label><p className="break-all rounded-md bg-muted p-3 text-sm">{location.origin}/api/v1/plugins/{ID}/receive/{selected.id}</p></>}
       <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">状态映射（状态 → Paca 状态 UUID）<textarea rows={4} className={inputClass} value={statusMap} onChange={e=>setStatusMap(e.target.value)}/></label><label className="text-sm">优先级映射<textarea rows={4} className={inputClass} value={priorityMap} onChange={e=>setPriorityMap(e.target.value)}/></label></div>
-      <p className="text-xs text-muted-foreground">留空状态映射时，完成事件使用 done 分类，普通任务使用 todo 分类。仅日期的任务会导入，但不会自动安排午夜提醒。</p>
+      <p className="text-xs text-muted-foreground">默认 open / none → todo，in-progress → inprogress，完成 → done；自定义状态需填写映射。仅日期保留来源信息，不自动安排午夜提醒。</p>
       <div className="flex flex-wrap gap-2"><button className={buttonClass} disabled={busy||!canEdit} onClick={()=>act(async()=>{
         if(selected){await api(`${base}/connections/${selected.id}`,"PATCH",config());choose(null)}
         else {setCredential(await api<{secret:string;receive_url:string}>(`${base}/connections`,"POST",config()))}

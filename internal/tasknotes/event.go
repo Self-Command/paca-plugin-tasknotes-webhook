@@ -7,15 +7,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path"
 	"strings"
 	"time"
 	_ "time/tzdata"
+	"unicode"
 )
 
 type Task struct {
 	ID           string   `json:"id"`
 	Path         string   `json:"path"`
 	Title        string   `json:"title"`
+	Details      *string  `json:"details,omitempty"`
 	Status       string   `json:"status"`
 	Priority     string   `json:"priority"`
 	Scheduled    string   `json:"scheduled"`
@@ -56,7 +59,18 @@ func Decode(raw []byte) (Envelope, error) {
 	if _, err := time.Parse(time.RFC3339Nano, e.Timestamp); err != nil {
 		return e, errors.New("invalid event timestamp")
 	}
+	e.Data.Task.Path = NormalizePath(e.Data.Task.Path)
+	if e.Data.Previous != nil { e.Data.Previous.Path = NormalizePath(e.Data.Previous.Path) }
 	return e, nil
+}
+func NormalizePath(s string) string { return path.Clean(strings.ReplaceAll(s,"\\","/")) }
+func CleanText(s string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {if unicode.IsControl(r){return -1};return r},s))
+}
+func NormalizeTags(tags []string) []string {
+	result:=[]string{};seen:=map[string]bool{}
+	for _,value:=range tags { tag:=strings.TrimPrefix(CleanText(value),"#");if tag!=""&&!seen[tag]{seen[tag]=true;result=append(result,tag)} }
+	return result
 }
 func ValidSignature(raw []byte, secret, signature string) bool {
 	received, err := hex.DecodeString(signature)
@@ -106,11 +120,11 @@ func ParseDate(s, zone string) (Date, error) {
 		return Date{t.UTC().Format(time.RFC3339Nano), "instant"}, nil
 	}
 	if len(s) == 10 {
-		t, err := time.ParseInLocation("2006-01-02", s, loc)
+		_, err := time.ParseInLocation("2006-01-02", s, loc)
 		if err != nil {
 			return Date{}, err
 		}
-		return Date{t.UTC().Format(time.RFC3339Nano), "day"}, nil
+		return Date{nil, "day"}, nil
 	}
 	for _, layout := range []string{"2006-01-02T15:04:05.999999999", "2006-01-02T15:04"} {
 		if t, err := time.ParseInLocation(layout, s, loc); err == nil {

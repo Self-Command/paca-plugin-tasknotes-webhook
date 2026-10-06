@@ -39,7 +39,7 @@ Paca needs a valid 64-hex-character `ENCRYPTION_KEY`; missing encryption fails c
 5. Start the exact release's worker image with the runtime environment below.
 6. In the project's **TaskNotes 接入** tab create a connection. Copy its URL and one-time secret into official TaskNotes.
    Enable custom webhook headers (`corsHeaders`) and subscribe to the six task events displayed in the settings page.
-7. Leave webhook transformations off: the receiver expects the official envelope. Map custom statuses to Paca status UUIDs where necessary.
+7. Leave webhook transformations off: the receiver expects the official envelope. Unknown/custom statuses require an explicit Paca status UUID mapping.
 
 Runtime environment (no build secrets):
 
@@ -62,7 +62,8 @@ zero matching tasks is not proof that the original create failed. Confirm the re
 before reprocessing. Multiple matches and same-timestamp changes require a human decision.
 Applied deliveries cannot be replayed. Reprocessing retains creation intent and tombstones.
 
-TaskNotes is the owner of title, dates, status, importance and source tags. Paca edits to these fields can
+TaskNotes is the owner of title, dates, status, importance and source tags. Date-only source values are retained in integration metadata with null core instants, so no midnight reminder is inferred.
+Paca edits to these fields can
 be replaced by the next accepted TaskNotes event. No changes are sent back to Obsidian.
 Paca v0.18.6 has no task archive field: TaskNotes archive is recorded in `_integration_state_v1.archived`
 so a compatible scheduler can stop reminders. It does not delete the Paca task.

@@ -1,5 +1,8 @@
 """Executed in the existing official host smoke environment, only on Actions."""
 fixtures=json.loads((ROOT/'verification/tasknotes-official-fixtures.json').read_text())
+for fixture in fixtures['deliveries']:
+    expected_signature=hmac.new(fixtures['secret'].encode(),fixture['body'].encode(),hashlib.sha256).hexdigest()
+    assert hmac.compare_digest(fixture['headers']['X-TaskNotes-Signature'],expected_signature),'official signature protocol mismatch'
 connection=request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections',{'name':'Official TaskNotes fixture','timezone':'Asia/Shanghai'},201)
 connection_id=connection['id']
 secret=connection['secret']

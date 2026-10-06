@@ -119,7 +119,7 @@ func (w *Worker) call(ctx context.Context, method, path string, body any, out an
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+w.Key)
+	req.Header.Set("X-API-Key", w.Key)
 	req.Header.Set("Content-Type", "application/json")
 	r, err := w.HTTP.Do(req)
 	if err != nil {
@@ -409,6 +409,17 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 	if err != nil {
 		return nil, err
 	}
+	if start.Value != nil && due.Value != nil {
+		startTime, _ := time.Parse(time.RFC3339Nano, start.Value.(string))
+		dueTime, _ := time.Parse(time.RFC3339Nano, due.Value.(string))
+		if dueTime.Before(startTime) {
+			return nil, errors.New("due time cannot precede start time")
+		}
+	}
+	title := tasknotes.CleanText(t.Title)
+	if title == "" || len([]rune(title)) > 500 {
+		return nil, errors.New("title must contain 1–500 characters")
+	}
 	priority := 35
 	if v, ok := c.Priorities[t.Priority]; ok {
 		priority = v
@@ -425,14 +436,21 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 			seen[tag] = true
 		}
 	}
-	for _, tag := range t.Tags {
+	for _, tag := range tasknotes.NormalizeTags(t.Tags) {
 		if !seen[tag] {
 			tags = append(tags, tag)
 			seen[tag] = true
 		}
 	}
-	metadata := map[string]any{"version": 1, "source": "tasknotes", "archived": t.Archived || e.Event == "task.archived", "recurring": t.Recurrence != nil, "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value}
-	payload := map[string]any{"title": t.Title, "start_date": start.Value, "due_date": due.Value, "importance": priority, "tags": tags, "custom_fields": map[string]any{"_integration_ref_v1": s.Ref, "_integration_state_v1": metadata}}
+	metadata := map[string]any{"version": 1, "source": "tasknotes", "archived": t.Archived || e.Event == "task.archived", "recurring": t.Recurrence != nil, "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value,"start_source":t.Scheduled,"due_source":t.Due}
+	payload := map[string]any{"title": title, "start_date": start.Value, "due_date": due.Value, "importance": priority, "tags": tags, "custom_fields": map[string]any{"_integration_ref_v1": s.Ref, "_integration_state_v1": metadata}}
+	if t.Details != nil {
+		blocks:=[]any{}
+		for _,line:=range strings.Split(*t.Details,"\n") {
+			blocks=append(blocks,map[string]any{"type":"paragraph","content":[]any{map[string]any{"type":"text","text":strings.TrimSuffix(line,"\r"),"styles":map[string]any{}}},"children":[]any{}})
+		}
+		payload["description"]=blocks
+	}
 	var statuses struct {
 		Items []struct {
 			ID       string `json:"id"`
@@ -444,20 +462,25 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 	}
 	mapped := c.Statuses[t.Status]
 	completed := e.Event == "task.completed" || strings.EqualFold(t.Status, "done") || strings.EqualFold(t.Status, "completed")
+	category:="todo"
+	switch strings.ToLower(t.Status) {
+	case "","none","open":
+	case "in-progress": category="inprogress"
+	case "done","completed": category="done"
+	default: if mapped==""&&!completed{return nil,errors.New("unknown TaskNotes status; configure project status mapping")}
+	}
+	if completed{category="done"}
 	for _, st := range statuses.Items {
 		if mapped != "" && st.ID == mapped {
 			payload["status_id"] = mapped
 			return payload, nil
 		}
-		if mapped == "" && ((completed && st.Category == "done") || (!completed && st.Category == "todo")) {
+		if mapped == "" && st.Category == category {
 			payload["status_id"] = st.ID
 			return payload, nil
 		}
 	}
-	if mapped != "" || completed {
-		return nil, errors.New("configure a status belonging to this project")
-	}
-	return payload, nil
+	return nil, errors.New("configure a status belonging to this project")
 }
 func (w *Worker) finish(ctx context.Context, id int64, state, message string) error {
 	if len(message) > 500 {
@@ -472,7 +495,7 @@ func (w *Worker) applied(ctx context.Context, id int64, s source, e tasknotes.En
 		return err
 	}
 	defer tx.Rollback(ctx)
-	tags, _ := json.Marshal(e.Data.Task.Tags)
+	tags, _ := json.Marshal(tasknotes.NormalizeTags(e.Data.Task.Tags))
 	_, err = tx.Exec(ctx, "UPDATE sources SET state=$1,version_at=$2,snapshot_hash=$3,source_tags=$4::jsonb,updated_at=NOW() WHERE id=$5", state, e.Version(), e.SnapshotHash(), string(tags), s.ID)
 	if err != nil {
 		return err

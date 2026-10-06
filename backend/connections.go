@@ -157,6 +157,10 @@ func (p *integrationPlugin) rotateConnection(req *plugin.Request, res *plugin.Re
 	res.JSON(200, map[string]any{"secret": secret})
 }
 func (p *integrationPlugin) receive(req *plugin.Request, res *plugin.Response) {
+	if len(req.Body) > 1024*1024 {
+		res.Error(413, "webhook body exceeds 1 MiB")
+		return
+	}
 	id := req.PathParam("id")
 	if !uuidPattern.MatchString(id) {
 		res.Error(404, "connection not found")
