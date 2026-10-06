@@ -104,6 +104,34 @@ assert create_requests==before_requests+1,'uncertain create was blindly submitte
 linked=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items']
 lost_id=next(x['task_id'] for x in linked if x['path']=='Tasks/Uncertain.md')
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['start_precision']=='day'
+
+# A paired vault keeps its identity across computers and follows explicit rename metadata.
+def send_case(event, task, delivery, previous=None, vault_path='/ci/other-computer'):
+    stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
+    task={**task,'dateModified':stamp}
+    envelope={'event':event,'timestamp':stamp,'vault':{'name':'Paired vault','path':vault_path},'data':{'task':task}}
+    if previous is not None: envelope['data']['previous']=previous
+    send_official(0,202,delivery,json.dumps(envelope))
+    for _ in range(60):
+        rows=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/deliveries')['items']
+        record=next(x for x in rows if x['delivery_id']==delivery)
+        if record['state']=='applied': return task
+        time.sleep(0.5)
+    raise AssertionError(f'{delivery} was not applied: {record}')
+
+changed={**lost['data']['task'],'title':'同一 vault 换电脑','scheduled':'2026-10-10T09:00:00+08:00'}
+changed=send_case('task.updated',changed,'other-computer')
+assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['title']==changed['title']
+renamed={**changed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md'}
+renamed=send_case('task.updated',renamed,'rename-with-previous',changed)
+assert len(request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'])==2
+renamed=send_case('task.archived',{**renamed,'archived':True},'archive')
+assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
+renamed=send_case('task.unarchived',{**renamed,'archived':False},'unarchive')
+assert not request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
+renamed=send_case('task.completed',{**renamed,'status':'done'},'complete')
+statuses=request('GET',f'/projects/{project["id"]}/task-statuses')['data']['items']
+assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['status_id']==next(x['id'] for x in statuses if x['category']=='done')
 send_official(0,202,'stale-delivery')
 time.sleep(3)
 assert request('GET',f'/projects/{project["id"]}/tasks/{imported_id}')['data']['title']=='官方任务已修改'
@@ -117,4 +145,4 @@ worker_process.terminate()
 worker_process.wait(timeout=10)
 log.close()
 proxy.shutdown()
-(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True},indent=2))
+(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True,'paired_vault_identity_across_computers':True,'explicit_rename':True,'archive_unarchive':True,'completion_status':True},indent=2))

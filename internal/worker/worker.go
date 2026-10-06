@@ -326,6 +326,21 @@ func (w *Worker) Tick(ctx context.Context) error {
 	}
 	return w.applied(ctx, id, s, e, "linked")
 }
+func sourceForPath(ctx context.Context, tx pgx.Tx, connectionID, path string) (int64, error) {
+	rows, err := tx.Query(ctx, "SELECT DISTINCT source_id FROM path_aliases WHERE connection_id=$1 AND path=$2", connectionID, path)
+	if err != nil { return 0, err }
+	defer rows.Close()
+	var id int64
+	count := 0
+	for rows.Next() {
+		if err = rows.Scan(&id); err != nil { return 0, err }
+		count++
+	}
+	if err = rows.Err(); err != nil { return 0, err }
+	if count == 0 { return 0, pgx.ErrNoRows }
+	if count != 1 { return 0, associationConflict{"legacy vault paths map to multiple tasks; manual resolution required"} }
+	return id, nil
+}
 func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope) (source, error) {
 	tx, err := w.DB.Begin(ctx)
 	if err != nil {
@@ -334,10 +349,10 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 	defer tx.Rollback(ctx)
 	path := e.Data.Task.Path
 	var sid int64
-	err = tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), path).Scan(&sid)
+	sid, err = sourceForPath(ctx, tx, c.ID, path)
 	if err == nil && e.Data.Previous != nil && e.Data.Previous.Path != path {
 		var oldID int64
-		oldErr := tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), e.Data.Previous.Path).Scan(&oldID)
+		oldID, oldErr := sourceForPath(ctx, tx, c.ID, e.Data.Previous.Path)
 		if oldErr == nil && oldID != sid {
 			return source{}, associationConflict{"rename would merge two sources; manual resolution required"}
 		}
@@ -346,7 +361,7 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 		}
 	}
 	if errors.Is(err, pgx.ErrNoRows) && e.Data.Previous != nil && e.Data.Previous.Path != path {
-		err = tx.QueryRow(ctx, "SELECT source_id FROM path_aliases WHERE connection_id=$1 AND vault_key=$2 AND path=$3", c.ID, e.VaultKey(), e.Data.Previous.Path).Scan(&sid)
+		sid, err = sourceForPath(ctx, tx, c.ID, e.Data.Previous.Path)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		b := make([]byte, 16)

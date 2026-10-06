@@ -96,7 +96,9 @@ func ValidSignature(raw []byte, secret, signature string) bool {
 	return hmac.Equal(received, mac.Sum(nil))
 }
 func Hash(raw []byte) string        { h := sha256.Sum256(raw); return hex.EncodeToString(h[:]) }
-func (e Envelope) VaultKey() string { return Hash([]byte(e.Vault.Name + "\n" + e.Vault.Path)) }
+// A paired connection identifies the vault. Its machine-specific absolute path
+// must not create a second task when the same vault moves to another computer.
+func (e Envelope) VaultKey() string { return "connection" }
 func (e Envelope) Version() time.Time {
 	// dateModified is not a monotonic TaskNotes revision; ties remain visible conflicts.
 	if t, err := time.Parse(time.RFC3339Nano, e.Data.Task.DateModified); err == nil {

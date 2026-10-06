@@ -21,6 +21,7 @@ jobs:
       - name: Go checks
         run: |
           printf 'package buildinfo\nfunc init() { SourceSHA = "%s" }\n' "$GITHUB_SHA" > internal/buildinfo/stamp.go
+          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v$(jq -r .version plugin.json)"; fi
           go mod tidy
           gofmt -w backend cmd internal
           git diff -- backend cmd internal go.mod go.sum > gofmt.patch
@@ -103,7 +104,7 @@ jobs:
         run: docker logs paca-ci-api --tail 100 || true
   publish:
     needs: [build, compatibility]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -130,6 +131,12 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: SOURCE_SHA=${{ github.sha }}
           tags: ghcr.io/self-command/${{ github.event.repository.name }}-worker:sha-${{ github.sha }}
+      - name: Published worker architecture smoke tests
+        run: |
+          image="ghcr.io/self-command/${GITHUB_REPOSITORY#*/}-worker:sha-$GITHUB_SHA"
+          for arch in amd64 arm64; do
+            docker run --rm --platform "linux/$arch" "$image" --version | jq --exit-status --arg sha "$GITHUB_SHA" '.source_sha == $sha'
+          done
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -137,5 +144,7 @@ jobs:
         run: |
           printf '%s\n' "ghcr.io/self-command/${GITHUB_REPOSITORY#*/}-worker@$IMAGE_DIGEST" > release/assets/image-digest.txt
           tag="v0.1.0-dev.${GITHUB_RUN_NUMBER}"
+          flags="--prerelease"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; flags=""; fi
           printf '%s\n' 'TaskNotes integration candidate; review host verification report before deployment.' "Source: $GITHUB_SHA" "Worker: $IMAGE_DIGEST" > /tmp/notes.md
-          gh release create "$tag" release/assets/* --target "$GITHUB_SHA" --title "$tag" --prerelease --notes-file /tmp/notes.md
+          gh release create "$tag" release/assets/* --target "$GITHUB_SHA" --title "$tag" $flags --notes-file /tmp/notes.md
