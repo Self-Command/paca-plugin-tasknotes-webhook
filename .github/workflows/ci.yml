@@ -86,7 +86,7 @@ jobs:
         if: always()
         with:
           name: host-verification
-          path: release/verification/
+          path: verification/
       - name: Diagnostics
         if: failure()
         run: docker logs paca-ci-api --tail 100 || true

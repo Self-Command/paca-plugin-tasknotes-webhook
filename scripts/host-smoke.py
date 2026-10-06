@@ -63,11 +63,11 @@ request('GET',f'/plugins/{plugin_id}/health')
 cmd('docker','restart','paca-ci-api')
 time.sleep(5)
 request('GET',f'/plugins/{plugin_id}/health')
-verification=ROOT/'release/verification'
+verification=ROOT/'verification'
 verification.mkdir(parents=True,exist_ok=True)
-(ROOT/'release/ci.Caddyfile').write_text(':80 {\n handle /api/* { reverse_proxy paca-ci-api:8080 }\n handle_path /plugins/* { root * /var/www/plugins; file_server }\n handle { reverse_proxy paca-ci-web:80 }\n}\n')
+(ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* { reverse_proxy paca-ci-api:8080 }\n handle_path /plugins/* { root * /var/www/plugins; file_server }\n handle { reverse_proxy paca-ci-web:80 }\n}\n')
 cmd('docker','run','-d','--name','paca-ci-web','--network','paca-ci','pacaai/paca-web:0.18.6')
-cmd('docker','run','-d','--name','paca-ci-caddy','--network','paca-ci','-p','127.0.0.1:18081:80','-v',f'{ROOT}/release/ci.Caddyfile:/etc/caddy/Caddyfile:ro','-v',f'{ROOT}/release/frontend:/var/www/plugins:ro','caddy:2-alpine')
+cmd('docker','run','-d','--name','paca-ci-caddy','--network','paca-ci','-p','127.0.0.1:18081:80','-v',f'{ROOT}/ci.Caddyfile:/etc/caddy/Caddyfile:ro','-v',f'{ROOT}/release/frontend:/var/www/plugins:ro','caddy:2-alpine')
 from playwright.sync_api import sync_playwright
 with sync_playwright() as pw:
     browser=pw.chromium.launch()
