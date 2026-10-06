@@ -34,6 +34,7 @@ type Worker struct {
 }
 type apiError struct{ Code int }
 type associationConflict struct{ message string }
+
 func (e associationConflict) Error() string { return e.message }
 
 func (e apiError) Error() string { return fmt.Sprintf("Paca API HTTP %d", e.Code) }

@@ -10,7 +10,36 @@ for name,value in [('api-key',api_key),('worker-secret',worker_secret)]:
     (secrets_dir/name).write_text(value)
     (secrets_dir/name).chmod(0o600)
 cmd('docker','run','-d','--name','paca-ci-db-forward','--network','paca-ci','-p','127.0.0.1:15432:5432','alpine/socat','tcp-listen:5432,fork,reuseaddr','tcp-connect:paca-ci-db:5432')
-worker_env={**os.environ,'PACA_API_URL':'http://127.0.0.1:18080','DATABASE_URL':'postgres://postgres:ci-only-password@127.0.0.1:15432/paca?sslmode=disable','PACA_API_KEY_FILE':str(secrets_dir/'api-key'),'WORKER_SECRET_FILE':str(secrets_dir/'worker-secret')}
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+import threading, datetime
+lose_next_create=False
+create_requests=0
+class Proxy(BaseHTTPRequestHandler):
+    def log_message(self,*args): pass
+    def forward(self):
+        global lose_next_create,create_requests
+        data=self.rfile.read(int(self.headers.get('Content-Length',0))) or None
+        request_headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','content-length','connection')}
+        forwarded=urllib.request.Request('http://127.0.0.1:18080'+self.path,data=data,method=self.command,headers=request_headers)
+        try:
+            with urllib.request.urlopen(forwarded,timeout=20) as r: status,payload=r.status,r.read()
+        except urllib.error.HTTPError as e: status,payload=e.code,e.read()
+        if self.command=='POST' and self.path.endswith('/tasks'):
+            create_requests+=1
+            if lose_next_create and status==201:
+                lose_next_create=False
+                status,payload=504,b'{"message":"simulated lost response"}'
+        self.send_response(status)
+        self.send_header('Content-Type','application/json')
+        self.end_headers()
+        self.wfile.write(payload)
+    do_GET=forward
+    do_POST=forward
+    do_PATCH=forward
+    do_DELETE=forward
+proxy=ThreadingHTTPServer(('127.0.0.1',18180),Proxy)
+threading.Thread(target=proxy.serve_forever,daemon=True).start()
+worker_env={**os.environ,'PACA_API_URL':'http://127.0.0.1:18180','DATABASE_URL':'postgres://postgres:ci-only-password@127.0.0.1:15432/paca?sslmode=disable','PACA_API_KEY_FILE':str(secrets_dir/'api-key'),'WORKER_SECRET_FILE':str(secrets_dir/'worker-secret')}
 log=open(ROOT/'verification/worker.log','w')
 worker_process=subprocess.Popen(['/tmp/tasknotes-worker'],env=worker_env,stdout=log,stderr=log)
 
@@ -37,6 +66,9 @@ def wait_delivery(index,state='applied'):
 
 send_official(0)
 send_official(0,200)
+changed=json.loads(fixtures['deliveries'][0]['body'])
+changed['data']['task']['title']='different duplicate body'
+send_official(0,409,raw_override=json.dumps(changed))
 wait_delivery(0)
 associations=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items']
 assert len(associations)==1
@@ -49,6 +81,26 @@ wait_delivery(1)
 updated=request('GET',f'/projects/{project["id"]}/tasks/{imported_id}')['data']
 assert updated['title']=='官方任务已修改' and updated['importance']==10 and 'paca-only' in updated['tags']
 assert updated['custom_fields']['_integration_state_v1']['start_precision']=='instant'
+
+# A successful core POST whose response is lost must be recovered through its external marker.
+lost=json.loads(fixtures['deliveries'][0]['body'])
+lost['data']['task']['path']='Tasks/Uncertain.md'
+lost['data']['task']['id']='Tasks/Uncertain.md'
+lost['data']['task']['title']='创建成功但响应丢失'
+lost['data']['task']['scheduled']='2026-10-10'
+lose_next_create=True
+before_requests=create_requests
+send_official(0,202,'lost-create-response',json.dumps(lost))
+for _ in range(80):
+    rows=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/deliveries')['items']
+    record=next(x for x in rows if x['delivery_id']=='lost-create-response')
+    if record['state']=='applied':break
+    time.sleep(0.5)
+else:raise AssertionError(f'uncertain create not reconciled: {rows}')
+assert create_requests==before_requests+1,'uncertain create was blindly submitted again'
+linked=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items']
+lost_id=next(x['task_id'] for x in linked if x['path']=='Tasks/Uncertain.md')
+assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['start_precision']=='day'
 send_official(0,202,'stale-delivery')
 time.sleep(3)
 assert request('GET',f'/projects/{project["id"]}/tasks/{imported_id}')['data']['title']=='官方任务已修改'
@@ -57,8 +109,9 @@ wait_delivery(2)
 request('GET',f'/projects/{project["id"]}/tasks/{imported_id}',expected=404)
 send_official(0,202,'old-after-delete')
 time.sleep(3)
-assert request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'][0]['state']=='deleted'
+assert next(x for x in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'] if x['path']=='Tasks/Integration.md')['state']=='deleted'
 worker_process.terminate()
 worker_process.wait(timeout=10)
 log.close()
-(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True},indent=2))
+proxy.shutdown()
+(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True},indent=2))
