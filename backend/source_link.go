@@ -26,5 +26,5 @@ func (p *integrationPlugin) sourceLink(req *plugin.Request, res *plugin.Response
 	_ = json.Unmarshal([]byte(fmt.Sprint(r[4])), &snapshot)
 	var aliases any
 	_ = json.Unmarshal([]byte(fmt.Sprint(r[7])), &aliases)
-	res.JSON(200, map[string]any{"aliases": aliases,"source_id": r[0], "connection_id": r[1], "source_ref": r[2], "path": r[3], "snapshot": snapshot, "event_at": r[5], "state": r[6]})
+	res.JSON(200, map[string]any{"aliases": aliases, "source_id": r[0], "connection_id": r[1], "source_ref": r[2], "path": r[3], "snapshot": snapshot, "event_at": r[5], "state": r[6]})
 }
