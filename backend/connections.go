@@ -17,6 +17,7 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 
 type connectionInput struct {
 	Name        string            `json:"name"`
+	Secret      string            `json:"secret"`
 	Timezone    string            `json:"timezone"`
 	Enabled     bool              `json:"enabled"`
 	StatusMap   map[string]string `json:"status_map"`
@@ -25,6 +26,9 @@ type connectionInput struct {
 }
 
 func validateConnection(c *connectionInput) bool {
+	if c.Secret != "" && (len(c.Secret) < 32 || len(c.Secret) > 256 || strings.TrimSpace(c.Secret) != c.Secret || strings.ContainsAny(c.Secret, "\r\n\t\x00")) {
+		return false
+	}
 	if c.Timezone == "" {
 		c.Timezone = "Asia/Shanghai"
 	}
@@ -82,7 +86,7 @@ func (p *integrationPlugin) connections(req *plugin.Request, res *plugin.Respons
 func (p *integrationPlugin) createConnection(req *plugin.Request, res *plugin.Response) {
 	c, err := plugin.JSONBody[connectionInput](req)
 	if err != nil || !validateConnection(&c) {
-		res.Error(400, "invalid name, timezone or field mapping")
+		res.Error(400, "invalid name, timezone, field mapping or Secret (32-256 characters)")
 		return
 	}
 	id, err := newUUID()
@@ -90,12 +94,15 @@ func (p *integrationPlugin) createConnection(req *plugin.Request, res *plugin.Re
 		res.Error(503, "randomness unavailable")
 		return
 	}
-	key := make([]byte, 32)
-	if _, err = rand.Read(key); err != nil {
-		res.Error(503, "randomness unavailable")
-		return
+	secret := c.Secret
+	if secret == "" {
+		key := make([]byte, 32)
+		if _, err = rand.Read(key); err != nil {
+			res.Error(503, "randomness unavailable")
+			return
+		}
+		secret = hex.EncodeToString(key)
 	}
-	secret := hex.EncodeToString(key)
 	cipher, err := p.encrypt(secret)
 	if err != nil {
 		res.Error(503, "encryption unavailable")
@@ -115,12 +122,17 @@ func (p *integrationPlugin) createConnection(req *plugin.Request, res *plugin.Re
 func (p *integrationPlugin) updateConnection(req *plugin.Request, res *plugin.Response) {
 	c, err := plugin.JSONBody[connectionInput](req)
 	if err != nil || !validateConnection(&c) || c.Revision < 1 {
-		res.Error(400, "complete configuration and base revision required")
+		res.Error(400, "complete configuration, base revision and valid Secret required; leave Secret empty to preserve")
+		return
+	}
+	cipher, err := p.encrypt(c.Secret)
+	if err != nil {
+		res.Error(503, "encryption unavailable")
 		return
 	}
 	sm, _ := json.Marshal(c.StatusMap)
 	pm, _ := json.Marshal(c.PriorityMap)
-	n, err := p.db.Exec("UPDATE connections SET name=$1,enabled=$2,timezone=$3,status_map=$4::jsonb,priority_map=$5::jsonb,revision=revision+1 WHERE id=$6 AND project_id=$7 AND revision=$8", c.Name, c.Enabled, c.Timezone, string(sm), string(pm), req.PathParam("id"), req.PathParam("projectId"), c.Revision)
+	n, err := p.db.Exec("UPDATE connections SET name=$1,enabled=$2,timezone=$3,status_map=$4::jsonb,priority_map=$5::jsonb,secret_enc=COALESCE(NULLIF($9,''),secret_enc),revision=revision+1 WHERE id=$6 AND project_id=$7 AND revision=$8", c.Name, c.Enabled, c.Timezone, string(sm), string(pm), req.PathParam("id"), req.PathParam("projectId"), c.Revision, cipher)
 	if err != nil {
 		res.Error(503, "connection update failed")
 		return

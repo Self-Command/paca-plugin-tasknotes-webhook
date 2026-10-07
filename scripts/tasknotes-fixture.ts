@@ -17,9 +17,11 @@ const transpiler=new Bun.Transpiler({loader:"ts",tsconfig:{compilerOptions:{expe
 const code=transpiler.transformSync(prefix+source);
 await writeFile("/tmp/tasknotes-fixture-controller.mjs",code);
 const {WebhookController}=await import("/tmp/tasknotes-fixture-controller.mjs");
-const secret="official-controller-ci-only-secret";
-const plugin={settings:{webhooks:[{id:"fixture",url:"https://fixture.invalid",active:true,secret,events:["task.created","task.updated","task.deleted","task.archived","task.unarchived","task.completed"],successCount:0,failureCount:0}]},app:{vault:{getName:()=>"Official fixture vault",adapter:{basePath:"/ci/vault"}}},saveSettings:async()=>{}};
+const plugin={settings:{webhooks:[] as any[]},app:{vault:{getName:()=>"Official fixture vault",adapter:{basePath:"/ci/vault"}}},saveSettings:async()=>{}};
 const controller=new WebhookController(plugin);
+const secret=controller.generateWebhookSecret();
+if(!/^[a-f0-9]{64}$/.test(secret))throw new Error("Official generated Secret format changed");
+plugin.settings.webhooks=[{id:"fixture",url:"https://fixture.invalid",active:true,secret,events:["task.created","task.updated","task.deleted","task.archived","task.unarchived","task.completed"],successCount:0,failureCount:0}];
 const initial={id:"Tasks/Integration.md",path:"Tasks/Integration.md",title:"官方 TaskNotes 任务",status:"open",priority:"high",scheduled:"2026-10-10T09:00:00+08:00",due:"2026-10-10T10:00:00+08:00",tags:["学习"],archived:false,dateModified:new Date(Date.now()-10000).toISOString()};
 for(const [event,data] of [
  ["task.created",{task:initial}],

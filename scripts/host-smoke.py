@@ -81,7 +81,7 @@ for _ in range(40):
             if ready.status==200: break
     except OSError: time.sleep(0.5)
 else: raise RuntimeError('Caddy did not become ready')
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 with sync_playwright() as pw:
     browser=pw.chromium.launch()
     context=browser.new_context(viewport={'width':1440,'height':1000})
@@ -91,6 +91,19 @@ with sync_playwright() as pw:
     page.goto(f'http://127.0.0.1:18081/projects/{project["id"]}/settings/',wait_until='domcontentloaded')
     page.get_by_role('button',name=manifest['displayName'],exact=True).last.click(timeout=45000)
     page.get_by_role('status').filter(has_text='已连接宿主').wait_for(timeout=30000)
+    page.get_by_label('项目连接',exact=True).select_option(connection_id)
+    field=page.get_by_label('TaskNotes 生成的 Secret',exact=True)
+    assert field.get_attribute('type')=='password'
+    ui_secret=secrets.token_hex(32)
+    field.fill(ui_secret)
+    before_ui_sources=request('GET',connection_path+'/sources')['items']
+    with page.expect_response(lambda r:r.request.method=='PATCH' and r.url.endswith('/connections/'+connection_id)) as saved:
+        page.get_by_role('button',name='保存连接',exact=True).click()
+    assert saved.value.ok
+    expect(field).to_have_value('')
+    verify_saved_secret(ui_secret)
+    verify_saved_secret(replacement,401)
+    assert request('GET',connection_path+'/sources')['items']==before_ui_sources
     page.screenshot(path=str(verification/'plugin-settings.png'),full_page=True)
     page.goto(f'http://127.0.0.1:18081/projects/{project["id"]}/tasks/{target["id"]}',wait_until='domcontentloaded')
     page.get_by_role('heading',name='TaskNotes 来源',exact=True).wait_for(timeout=30000)
@@ -101,10 +114,12 @@ retained_sources=request('GET',reload_path)['items']
 request('PATCH',f'/admin/plugins/{installed["id"]}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
 assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==3
 assert request('GET',reload_path)['items']==retained_sources,'Manifest reload changed source associations'
+verify_saved_secret(ui_secret)
 request('DELETE',f'/admin/plugins/{installed["id"]}',expected=204)
 request('GET',f'/plugins/{plugin_id}/health',expected=404)
 request('GET',f'/projects/{project["id"]}/tasks/{task["id"]}')
 report={'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'worker_hmac':True,'nonce_replay_rejected':True,'frontend_host':True,'task_crud':True,'disable_enable':True,'restart':True}
 report.update({'historical_package_upgrade':True,'upgrade_source':legacy_source,'worker_credential_preserved':True,'manifest_reload_preserves_business_data':True,'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
+report.update({'sender_secret_settings_ui':True,'secret_field_cleared_after_save':True,'sender_secret_survives_manifest_reload':True})
 (verification/'host-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'task_crud':True,'disable_enable':True,'restart':True}))

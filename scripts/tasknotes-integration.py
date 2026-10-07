@@ -3,9 +3,22 @@ fixtures=json.loads((ROOT/'verification/tasknotes-official-fixtures.json').read_
 for fixture in fixtures['deliveries']:
     expected_signature=hmac.new(fixtures['secret'].encode(),fixture['body'].encode(),hashlib.sha256).hexdigest()
     assert hmac.compare_digest(fixture['headers']['X-TaskNotes-Signature'],expected_signature),'official signature protocol mismatch'
-connection=request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections',{'name':'Official TaskNotes fixture','timezone':'Asia/Shanghai'},201)
+connection=request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections',{'name':'Official TaskNotes fixture','timezone':'Asia/Shanghai','secret':fixtures['secret']},201)
 connection_id=connection['id']
 secret=connection['secret']
+assert secret==fixtures['secret'],'receiver ignored official sender-generated Secret'
+connection_path=f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}'
+listed=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections')['items']
+assert all('secret' not in c and 'secret_enc' not in c for c in listed),'saved Secret leaked in query'
+request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections',{'name':'Invalid credential','secret':'too-short'},400)
+
+def verify_saved_secret(value, expected=400):
+    raw=b'{}'
+    signature=hmac.new(value.encode(),raw,hashlib.sha256).hexdigest()
+    headers={'X-TaskNotes-Signature':signature,'X-TaskNotes-Event':'task.created','X-TaskNotes-Delivery-ID':'secret-validation'}
+    # Correct authentication proceeds to invalid envelope rejection; no event is created.
+    request('POST',f'/plugins/{plugin_id}/receive/{connection_id}',{},expected,headers)
+verify_saved_secret(secret)
 api_key=request('POST','/users/me/api-keys',{'name':'TaskNotes CI worker'},201)['data']['key']
 secrets_dir=ROOT/'ci-secrets'
 secrets_dir.mkdir(mode=0o700,exist_ok=True)
@@ -175,4 +188,20 @@ worker_process.terminate()
 worker_process.wait(timeout=10)
 log.close()
 proxy.shutdown()
-(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'concurrent_duplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True,'paired_vault_identity_across_computers':True,'explicit_rename':True,'archive_unarchive':True,'completion_status':True,'unknown_update_requires_association':True,'manual_link_verified':True},indent=2))
+
+# Import a sender-generated replacement without changing associations/history; blank preserves it.
+before_history=request('GET',connection_path+'/deliveries')['items']
+before_sources=request('GET',connection_path+'/sources')['items']
+c=next(c for c in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections')['items'] if c['id']==connection_id)
+replacement=secrets.token_hex(32)
+request('PATCH',connection_path,{**c,'secret':replacement})
+verify_saved_secret(replacement)
+verify_saved_secret(secret,401)
+request('PATCH',connection_path,{**c,'secret':secrets.token_hex(32)},409)
+verify_saved_secret(replacement)
+c=next(c for c in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections')['items'] if c['id']==connection_id)
+request('PATCH',connection_path,{**c,'secret':''})
+verify_saved_secret(replacement)
+assert request('GET',connection_path+'/deliveries')['items']==before_history
+assert request('GET',connection_path+'/sources')['items']==before_sources
+(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'concurrent_duplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True,'paired_vault_identity_across_computers':True,'explicit_rename':True,'archive_unarchive':True,'completion_status':True,'unknown_update_requires_association':True,'manual_link_verified':True,'official_generated_secret_imported':True,'saved_secret_not_exposed':True,'secret_replacement_revision_guard':True,'empty_secret_preserves_existing':True,'secret_change_preserves_history':True},indent=2))

@@ -2,7 +2,7 @@
 
 Independent Apache-2.0 plugin for official Paca v0.18.6.
 
-Status: phase 1 candidate. Signed ingestion, durable inbox and REST task import are implemented;
+Status: signed ingestion, durable inbox, REST task synchronization and project settings are implemented;
 business acceptance is tracked in Actions. Phase-0 releases are scaffolds and must not be used as a working integration.
 All builds and automated checks run in GitHub Actions. No Paca core fork is required by the baseline.
 
@@ -37,8 +37,11 @@ Paca needs a valid 64-hex-character `ENCRYPTION_KEY`; missing encryption fails c
 4. Give the worker a PostgreSQL login with access only to
    `plugin_data_com_selfcommand_tasknotes_webhook`, including its sequences. It does not need access to core tables.
 5. Start the exact release's worker image with the runtime environment below.
-6. In the project's **TaskNotes 接入** tab create a connection. Copy its URL and one-time secret into official TaskNotes.
+6. In the project's **TaskNotes 接入** tab create a connection, then copy its receiver URL into official TaskNotes' desktop Webhook settings.
+   TaskNotes' settings UI **generates its own Secret**. Copy that value back into Paca's **TaskNotes 生成的 Secret** field and save the connection.
+   Leaving the field blank on update preserves the saved encrypted value. Queries never return it. Saving a Secret preserves the connection, task associations and delivery history.
    Enable custom webhook headers (`corsHeaders`) and subscribe to the six task events displayed in the settings page.
+   For API-based TaskNotes registration only, Paca can generate a Secret for the optional `secret` request property; this is not an input field in TaskNotes' settings UI.
 7. Leave webhook transformations off: the receiver expects the official envelope. Unknown/custom statuses require an explicit Paca status UUID mapping.
 
 Runtime environment (no build secrets):
