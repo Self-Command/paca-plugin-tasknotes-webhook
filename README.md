@@ -92,3 +92,8 @@ See the `host-verification` artifact for actual results; a source commit alone i
 所有验证在 Action：控制器协议测试及真实官方 Obsidian 1.14.4 / TaskNotes 4.13.8 隔离 vault 界面测试。`scripts/obsidian-fixture-lock.json` 锁发行资产 SHA256；实际发行源码为 `1ba391b957c6fbbdc484716bbc5a284f5f02e59d`，审查提交 `69535cd956d11474b980deef8429ff0be232185f` 较它多四个提交，二者分别记录，不以自定义插件产物代替。
 
 数据库访问为每个插件加独立查询标识，避免官方宿主共享 PostgreSQL 连接池在切换 schema 后复用其他插件的缓存执行计划。保持独立 schema、角色和 API 边界，使用三个插件的匹配发行产物。
+
+
+## WASM 凭据与重载
+
+WASM 后端的随机编号、配对令牌、worker 凭据及 AES-GCM nonce 使用原生 PostgreSQL 的随机 UUID 组合获取新鲜随机数据，避免模块状态恢复后复用历史序列。无需额外数据库扩展；原密文格式保持兼容。原生 Go worker 保留操作系统随机源。Action 包含错误时拒绝生成凭据的检查，打卡插件另验收连续配对、撤销后重新配对、模块重载与宿主重启。
