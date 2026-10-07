@@ -83,3 +83,10 @@ official Paca installation/disable/restart tests and browser settings loading. A
 TaskNotes WebhookController with a mocked Obsidian transport to produce real payloads, then verify
 create/update/delete, source precision, unrelated tags, stale events and a simulated lost successful create response.
 See the `host-verification` artifact for actual results; a source commit alone is not evidence of passing checks.
+
+
+## v2.0 六事件修复
+
+使用事件时间与独立任务修改时间、可验证的前序快照和来源墓碑；归档映射使用 `status_map["@archived"]` 的项目状态 UUID。旧 schema 3 关联原地升级至 schema 4，不重建任务。
+
+所有验证在 Action：控制器协议测试及真实官方 Obsidian 1.14.4 / TaskNotes 4.13.8 隔离 vault 界面测试。`scripts/obsidian-fixture-lock.json` 锁发行资产 SHA256；实际发行源码为 `1ba391b957c6fbbdc484716bbc5a284f5f02e59d`，审查提交 `69535cd956d11474b980deef8429ff0be232185f` 较它多四个提交，二者分别记录，不以自定义插件产物代替。

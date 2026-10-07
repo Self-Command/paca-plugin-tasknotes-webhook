@@ -3,7 +3,8 @@ fixtures=json.loads((ROOT/'verification/tasknotes-official-fixtures.json').read_
 for fixture in fixtures['deliveries']:
     expected_signature=hmac.new(fixtures['secret'].encode(),fixture['body'].encode(),hashlib.sha256).hexdigest()
     assert hmac.compare_digest(fixture['headers']['X-TaskNotes-Signature'],expected_signature),'official signature protocol mismatch'
-connection=request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections',{'name':'Official TaskNotes fixture','timezone':'Asia/Shanghai','secret':fixtures['secret']},201)
+archive_status=request('POST',f'/projects/{project["id"]}/task-statuses',{'name':'归档','category':'done','position':99},201)['data']
+connection=request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections',{'name':'Official TaskNotes fixture','timezone':'Asia/Shanghai','secret':fixtures['secret'],'status_map':{'@archived':archive_status['id']}},201)
 connection_id=connection['id']
 secret=connection['secret']
 assert secret==fixtures['secret'],'receiver ignored official sender-generated Secret'
@@ -146,9 +147,10 @@ assert not calendar['custom_fields']['_integration_state_v1']['recurring']
 renamed={**changed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md'}
 renamed=send_case('task.updated',renamed,'rename-with-previous',changed)
 assert len(request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'])==2
-renamed=send_case('task.archived',{**renamed,'archived':True},'archive')
+renamed=send_case('task.archived',{**renamed,'path':'Archive/Renamed.md','id':'Archive/Renamed.md','archived':True},'archive')
+assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['status_id']==archive_status['id']
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
-renamed=send_case('task.unarchived',{**renamed,'archived':False},'unarchive')
+renamed=send_case('task.unarchived',{**renamed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md','archived':False},'unarchive')
 assert not request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
 renamed=send_case('task.completed',{**renamed,'status':'done'},'complete')
 statuses=request('GET',f'/projects/{project["id"]}/task-statuses')['data']['items']

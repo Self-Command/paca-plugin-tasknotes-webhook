@@ -27,7 +27,7 @@ func TestDisabledOrMismatchedHostPreventsMutation(t *testing.T) {
 				version := Version
 				source := buildinfo.SourceSHA
 				identity := PluginID
-				schema := 3
+				schema := 4
 				enabled := true
 				if mode == "disabled" {
 					enabled = false
@@ -59,7 +59,7 @@ func TestHealthyHostUsesPersonalAPIKeyHeader(t *testing.T) {
 	mutations := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/plugins/"+PluginID+"/worker/control" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": PluginID, "version": Version, "source_sha": buildinfo.SourceSHA, "schema_version": 3, "enabled": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": PluginID, "version": Version, "source_sha": buildinfo.SourceSHA, "schema_version": 4, "enabled": true})
 			return
 		}
 		if r.Header.Get("X-API-Key") != "private-test-key" || r.Header.Get("Authorization") != "" {

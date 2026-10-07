@@ -1,0 +1,17 @@
+{
+  "obsidian": {
+    "version": "1.14.4",
+    "asset": "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.14.4/Obsidian-1.14.4.AppImage",
+    "sha256": "6362ddbeeeebb7bbccb48fae009572cf2284ef92f5c919c1332aba48de6ffeaa"
+  },
+  "tasknotes": {
+    "version": "4.13.8",
+    "release_source_sha": "1ba391b957c6fbbdc484716bbc5a284f5f02e59d",
+    "review_source_sha": "69535cd956d11474b980deef8429ff0be232185f",
+    "assets": {
+      "main.js": "ba429c5476048d4bc5ffa53068d803f11c79b3f6af24cc407a09e98c85bea092",
+      "manifest.json": "c40b0e32365e7fcd793345f5da043d9c5dc325d662c05a4c88690e08cdf452e1",
+      "styles.css": "78b552593f5ebdd3dffdedfe3eee88e05a43e785e82db07660029a788f763546"
+    }
+  }
+}
