@@ -94,7 +94,7 @@ try:
         assert version==lock['obsidian']['version'],f'Obsidian runtime changed: {version}'
         ui_page.evaluate('()=>window.localStorage.setItem("language","en")')
         def command(search,label):
-            ui_page.keyboard.press('Control+p')
+            ui_page.evaluate('()=>app.commands.executeCommandById("command-palette:open")')
             ui_page.locator('.prompt-input').fill(search)
             ui_page.locator('.suggestion-item').filter(has_text=re.compile(label,re.I)).first.click()
         def wait_event(event,expected_title=None):
