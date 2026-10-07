@@ -28,11 +28,17 @@ type Task struct {
 	DateModified string   `json:"dateModified"`
 	Recurrence   any      `json:"recurrence"`
 }
+
 func (t Task) Recurring() bool {
-	if t.Recurrence == nil { return false }
-	if value, ok := t.Recurrence.(string); ok { return strings.TrimSpace(value) != "" }
+	if t.Recurrence == nil {
+		return false
+	}
+	if value, ok := t.Recurrence.(string); ok {
+		return strings.TrimSpace(value) != ""
+	}
 	return true
 }
+
 type Envelope struct {
 	Event     string `json:"event"`
 	Timestamp string `json:"timestamp"`
@@ -133,15 +139,23 @@ type Date struct {
 // Paca v0.18.6 stores native task dates as SQL DATE. Preserve the calendar
 // date in that field and keep the full instant in versioned metadata.
 func CoreDate(d Date, zone string) (any, string, error) {
-	if d.Value == nil { return nil, "", nil }
+	if d.Value == nil {
+		return nil, "", nil
+	}
 	s, ok := d.Value.(string)
-	if !ok { return nil, "", errors.New("invalid instant") }
+	if !ok {
+		return nil, "", errors.New("invalid instant")
+	}
 	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil { return nil, "", err }
+	if err != nil {
+		return nil, "", err
+	}
 	loc, err := time.LoadLocation(zone)
-	if err != nil { return nil, "", err }
+	if err != nil {
+		return nil, "", err
+	}
 	day := t.In(loc).Format("2006-01-02")
-	return day+"T00:00:00Z", day, nil
+	return day + "T00:00:00Z", day, nil
 }
 
 func ParseDate(s, zone string) (Date, error) {

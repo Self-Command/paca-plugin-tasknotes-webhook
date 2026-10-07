@@ -38,8 +38,14 @@ func TestPrecisionAndDST(t *testing.T) {
 }
 func TestSQLDateDoesNotLoseInstantOrLocalCalendar(t *testing.T) {
 	d, err := ParseDate("2026-10-07T00:10:00+08:00", "Asia/Shanghai")
-	if err != nil { t.Fatal(err) }
-	core, day, err := CoreDate(d,"Asia/Shanghai")
-	if err != nil || core != "2026-10-07T00:00:00Z" || day != "2026-10-07" || d.Value != "2026-10-06T16:10:00Z" { t.Fatal(core,day,d.Value,err) }
-	if (Task{Recurrence:""}).Recurring() || !(Task{Recurrence:"FREQ=DAILY"}).Recurring() { t.Fatal("empty recurrence is an ordinary task") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, day, err := CoreDate(d, "Asia/Shanghai")
+	if err != nil || core != "2026-10-07T00:00:00Z" || day != "2026-10-07" || d.Value != "2026-10-06T16:10:00Z" {
+		t.Fatal(core, day, d.Value, err)
+	}
+	if (Task{Recurrence: ""}).Recurring() || !(Task{Recurrence: "FREQ=DAILY"}).Recurring() {
+		t.Fatal("empty recurrence is an ordinary task")
+	}
 }

@@ -470,9 +470,13 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 		}
 	}
 	startCore, startDay, err := tasknotes.CoreDate(start, c.Timezone)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	dueCore, dueDay, err := tasknotes.CoreDate(due, c.Timezone)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	metadata := map[string]any{"version": 2, "source": "tasknotes", "archived": t.Archived || e.Event == "task.archived", "recurring": t.Recurring(), "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value, "start_core_date": startDay, "due_core_date": dueDay, "start_source": t.Scheduled, "due_source": t.Due}
 	payload := map[string]any{"title": title, "start_date": startCore, "due_date": dueCore, "importance": priority, "tags": tags, "custom_fields": map[string]any{"_integration_ref_v1": s.Ref, "_integration_state_v1": metadata}}
 	if t.Details != nil {

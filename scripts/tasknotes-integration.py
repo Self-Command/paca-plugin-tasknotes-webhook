@@ -70,6 +70,9 @@ def wait_delivery(index,state='applied'):
 
 send_official(0)
 send_official(0,200)
+import concurrent.futures
+with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+    list(pool.map(lambda _:send_official(0,200),range(12)))
 changed=json.loads(fixtures['deliveries'][0]['body'])
 changed['data']['task']['title']='different duplicate body'
 send_official(0,409,raw_override=json.dumps(changed))
