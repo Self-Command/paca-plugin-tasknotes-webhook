@@ -145,7 +145,7 @@ func (w *Worker) call(ctx context.Context, method, path string, body any, out an
 
 type connection struct {
 	ID, Project, Timezone string
- ArchiveTag string
+	ArchiveTag            string
 	Statuses              map[string]string
 	Priorities            map[string]int
 	Revision              int
@@ -218,8 +218,10 @@ func (w *Worker) Tick(ctx context.Context) error {
 	if err != nil {
 		return w.finish(ctx, id, "conflict", "invalid stored envelope")
 	}
-	if err=w.hydrateLegacy(ctx,c.ID);err!=nil { return err }
- s, err := w.resolve(ctx, c, e)
+	if err = w.hydrateLegacy(ctx, c.ID); err != nil {
+		return err
+	}
+	s, err := w.resolve(ctx, c, e)
 	if err != nil {
 		var conflict associationConflict
 		if errors.As(err, &conflict) {
@@ -383,7 +385,7 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 			var id int64
 			var raw []byte
 			var t tasknotes.Task
-			if rows.Scan(&id, &raw) == nil && json.Unmarshal(raw, &t) == nil && ((e.Data.Previous!=nil && tasknotes.CanonicalHash(candidate,false)==tasknotes.CanonicalHash(t,false)) || (e.Data.Previous==nil && tasknotes.ArchiveEquivalent(candidate,t,c.ArchiveTag))) {
+			if rows.Scan(&id, &raw) == nil && json.Unmarshal(raw, &t) == nil && ((e.Data.Previous != nil && tasknotes.CanonicalHash(candidate, false) == tasknotes.CanonicalHash(t, false)) || (e.Data.Previous == nil && tasknotes.ArchiveEquivalent(candidate, t, c.ArchiveTag))) {
 				matches = append(matches, id)
 			}
 		}
@@ -447,39 +449,7 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 			s.Snapshot = &t
 		}
 	}
-	if err == nil && s.Snapshot == nil && s.Hash != "" {
-		rows, queryErr := tx.Query(ctx, "SELECT i.body FROM inbox i WHERE i.connection_id=$1 AND i.state='applied' AND i.body->'data'->'task'->>'path' IN (SELECT path FROM path_aliases WHERE source_id=$2) ORDER BY i.id DESC LIMIT 100", c.ID, sid)
-		if queryErr != nil {
-			return s, queryErr
-		}
-		var accepted *tasknotes.Envelope
-		for rows.Next() {
-			var body []byte
-			if rows.Scan(&body) == nil {
-				prior, decodeErr := tasknotes.Decode(body)
-				if decodeErr == nil && prior.LegacySnapshotHash() == s.Hash {
-					accepted = &prior
-					break
-				}
-			}
-		}
-		rows.Close()
-		if rows.Err() != nil {
-			return s, rows.Err()
-		}
-		if accepted != nil {
-			t := accepted.EffectiveTask()
-			s.Snapshot = &t
-			stamp := accepted.Version()
-			s.EventAt = &stamp
-			s.LastEvent = accepted.Event
-			s.Hash = accepted.SnapshotHash()
-			b, _ := json.Marshal(t)
-			if _, err = tx.Exec(ctx, "UPDATE sources SET snapshot=$1::jsonb,event_at=$2,task_modified_at=$3,last_event=$4,snapshot_hash=$5 WHERE id=$6", string(b), stamp, accepted.TaskModified(), accepted.Event, s.Hash, sid); err != nil {
-				return s, err
-			}
-		}
-	}
+
 	if err != nil {
 		return s, err
 	}

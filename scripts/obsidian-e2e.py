@@ -88,7 +88,7 @@ try:
         except Exception:
             save_diagnostic('obsidian-plugin-load-failure');raise
         for _ in range(3):ui_page.keyboard.press('Escape')
-        version=ui_page.evaluate('()=>window.require("obsidian").getAppVersion()')
+        version=ui_page.evaluate('()=>window.require("electron").remote.app.getVersion()')
         assert version==lock['obsidian']['version'],f'Obsidian runtime changed: {version}'
         ui_page.evaluate('()=>window.localStorage.setItem("language","en")')
         def command(search,label):
