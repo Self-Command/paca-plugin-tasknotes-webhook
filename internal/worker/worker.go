@@ -31,6 +31,7 @@ const Schema = "plugin_data_com_selfcommand_tasknotes_webhook"
 type Worker struct {
 	DB               *pgx.Conn
 	API, Key, Secret string
+	CheckinURL, CheckinSecret string
 	HTTP             *http.Client
 }
 type apiError struct{ Code int }
@@ -70,7 +71,8 @@ func New(ctx context.Context) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Worker{db, base, key, secret, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	w := &Worker{DB: db, API: base, Key: key, Secret: secret, HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+ if err=w.configureCheckin();err!=nil{db.Close(ctx);return nil,err};return w,nil
 }
 func (w *Worker) control(ctx context.Context) error {
 	b := make([]byte, 24)
@@ -238,7 +240,10 @@ func (w *Worker) Tick(ctx context.Context) error {
 			e.Data.Previous.Details = s.Snapshot.Details
 		}
 	}
-	decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
+	echo, echoErr := w.checkinEcho(ctx,c,s,e)
+ if echoErr!=nil{return w.finish(ctx,id,"error","writeback confirmation unavailable; retrying")}
+ if echo{return w.applied(ctx,id,s,e,s.State)}
+ decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
 	if decision != "apply" {
 		if decision == "duplicate" {
 			return w.applied(ctx, id, s, e, s.State)
@@ -580,10 +585,7 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 	}
 	metadata := map[string]any{"version": 2, "source": "tasknotes", "archived": t.Archived, "recurring": t.Recurring(), "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value, "start_core_date": startDay, "due_core_date": dueDay, "start_source": t.Scheduled, "due_source": t.Due}
 	custom := map[string]any{}
-	for key, value := range current.Custom {
-		custom[key] = value
-	}
-	custom["_integration_ref_v1"] = s.Ref
+		custom["_integration_ref_v1"] = s.Ref
 	custom["_integration_state_v1"] = metadata
 	payload := map[string]any{"title": title, "start_date": startCore, "due_date": dueCore, "importance": priority, "tags": tags, "custom_fields": custom}
 	if t.Details != nil {
@@ -593,9 +595,10 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 		}
 		payload["description"] = blocks
 	}
-	var statuses struct {
-		Items []struct {
-			ID       string `json:"id"`
+ if e.Event=="task.updated"&&s.Snapshot!=nil&&t.Status==s.Snapshot.Status&&t.Archived==s.Snapshot.Archived&&s.TaskID!=""{return payload,nil}
+ var statuses struct {
+  Items []struct {
+   ID string `json:"id"`
 			Category string `json:"category"`
 		} `json:"items"`
 	}
