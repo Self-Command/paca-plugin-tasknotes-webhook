@@ -50,7 +50,9 @@ capture=ThreadingHTTPServer(('127.0.0.1',18280),RealWebhookCapture)
 threading.Thread(target=capture.serve_forever,daemon=True).start()
 settings={'enableAPI':True,'apiPort':18823,'apiAuthToken':secrets.token_hex(24),'enableNaturalLanguageInput':False,'tasksFolder':'Tasks','archiveFolder':'Archive','moveArchivedTasks':True,'defaultTaskStatus':'open','webhooks':[{'id':'real-obsidian-ui','url':'http://127.0.0.1:18280'+receive_path,'active':True,'secret':obsidian_sender_secret,'events':['task.created','task.updated','task.completed','task.deleted','task.archived','task.unarchived'],'failureCount':0,'successCount':0}]}
 (plugin_dir/'data.json').write_text(json.dumps(settings))
-(vault/'.obsidian/community-plugins.json').write_text('["tasknotes"]')
+extra_setup=os.environ.get('OBSIDIAN_EXTRA_SETUP')
+if extra_setup:exec(pathlib.Path(extra_setup).read_text(),globals())
+(vault/'.obsidian/community-plugins.json').write_text(json.dumps(['tasknotes']+(['obsidian-paca-checkin-sync'] if extra_setup else [])))
 (vault/'.obsidian/core-plugins.json').write_text('["file-explorer","command-palette"]')
 (vault/'.obsidian/app.json').write_text(json.dumps({'promptDelete':False,'showUnsupportedFiles':True}))
 user_dir=fixture_root/'user';user_dir.mkdir(exist_ok=True)
@@ -58,7 +60,7 @@ user_dir=fixture_root/'user';user_dir.mkdir(exist_ok=True)
 ui_log=open(ROOT/'verification/obsidian-runtime.log','w')
 ui_worker_log=open(ROOT/'verification/obsidian-worker.log','w')
 ui_worker=subprocess.Popen(['/tmp/tasknotes-worker'],env={**worker_env,'PACA_API_URL':'http://127.0.0.1:18080'},stdout=ui_worker_log,stderr=ui_worker_log)
-obsidian=subprocess.Popen(['xvfb-run','-a',str(fixture_root/'squashfs-root/obsidian'),'--no-sandbox','--remote-debugging-port=19223',f'--user-data-dir={user_dir}',str(vault)],cwd=fixture_root,start_new_session=True,env={**os.environ,'OBSIDIAN_CONFIG_DIR':str(user_dir)},stdout=ui_log,stderr=ui_log)
+obsidian=subprocess.Popen(['xvfb-run','-a',str(fixture_root/'squashfs-root/obsidian'),'--no-sandbox',*(['--ignore-certificate-errors-spki-list='+os.environ['OBSIDIAN_FIXTURE_SPKI']] if extra_setup else []),'--remote-debugging-port=19223',f'--user-data-dir={user_dir}',str(vault)],cwd=fixture_root,start_new_session=True,env={**os.environ,'OBSIDIAN_CONFIG_DIR':str(user_dir)},stdout=ui_log,stderr=ui_log)
 ui_page=None
 try:
     for _ in range(120):
@@ -143,6 +145,8 @@ try:
         ui_page.screenshot(path=str(ROOT/'verification/obsidian-ui-six-events.png'))
         browser.close()
     report={'real_obsidian_ui':True,'obsidian_version':lock['obsidian']['version'],'official_tasknotes_version':lock['tasknotes']['version'],'release_source_sha':lock['tasknotes']['release_source_sha'],'review_source_sha':lock['tasknotes']['review_source_sha'],'official_assets_sha256_verified':True,'task_mutations_only_ui':True,'six_events':[x['event'] for x in received],'same_paca_task':True,'archive_folder_move':True,'delete_tombstone':True,'secret_redacted':True}
+        extra_check=os.environ.get('OBSIDIAN_EXTRA_E2E')
+        if extra_check:exec(pathlib.Path(extra_check).read_text(),globals(),locals())
     (ROOT/'verification/obsidian-report.json').write_text(json.dumps(report,indent=2))
 except Exception:
     if ui_page:
