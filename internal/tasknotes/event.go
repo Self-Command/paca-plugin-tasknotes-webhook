@@ -67,16 +67,36 @@ func Decode(raw []byte) (Envelope, error) {
 	if !AllowedEvent(e.Event) || strings.TrimSpace(e.Data.Task.Path) == "" || strings.TrimSpace(e.Data.Task.Title) == "" || e.Vault.Name == "" {
 		return e, errors.New("unsupported event or missing task/vault identity")
 	}
+	if len(e.Data.Task.Path) > 1024 || len([]rune(e.Data.Task.Title)) > 500 || len(e.Data.Task.Tags) > 128 || len(e.Vault.Name) > 256 || len(e.Vault.Path) > 4096 {
+		return e, errors.New("task fields exceed size limits")
+	}
+	if e.Data.Task.Details != nil && len(*e.Data.Task.Details) > 262144 {
+		return e, errors.New("task details exceed size limit")
+	}
+	for _, tag := range e.Data.Task.Tags {
+		if len([]rune(tag)) > 128 {
+			return e, errors.New("task tag exceeds size limit")
+		}
+	}
 	if _, err := time.Parse(time.RFC3339Nano, e.Timestamp); err != nil {
 		return e, errors.New("invalid event timestamp")
 	}
 	e.Data.Task.Path = NormalizePath(e.Data.Task.Path)
+	if !ValidPath(e.Data.Task.Path) {
+		return e, errors.New("task path must be relative to the paired vault")
+	}
 	if e.Data.Previous != nil {
 		e.Data.Previous.Path = NormalizePath(e.Data.Previous.Path)
+		if e.Data.Previous.Path != "." && !ValidPath(e.Data.Previous.Path) {
+			return e, errors.New("invalid previous task path")
+		}
 	}
 	return e, nil
 }
 func NormalizePath(s string) string { return path.Clean(strings.ReplaceAll(s, "\\", "/")) }
+func ValidPath(s string) bool {
+	return len(s) <= 1024 && s != "." && !strings.HasPrefix(s, "/") && s != ".." && !strings.HasPrefix(s, "../") && !strings.Contains(s, ":") && CleanText(s) == strings.TrimSpace(s)
+}
 func CleanText(s string) string {
 	return strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {

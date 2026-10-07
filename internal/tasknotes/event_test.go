@@ -4,6 +4,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +16,20 @@ func TestSignatureRawBytes(t *testing.T) {
 	sig := hex.EncodeToString(mac.Sum(nil))
 	if !ValidSignature(raw, "secret", sig) || ValidSignature([]byte(`{"a":1}`), "secret", sig) || ValidSignature(raw, "wrong", sig) {
 		t.Fatal("signature must authenticate exact bytes")
+	}
+}
+func TestEnvelopeRejectsUnsafePathsAndOversizedFields(t *testing.T) {
+	for _, value := range []string{"../outside.md", "/absolute.md", "C:/vault/task.md", "Tasks/\x00.md", strings.Repeat("x", 1025)} {
+		e := Envelope{Event: "task.created", Timestamp: "2026-10-07T00:00:00Z"}
+		e.Vault.Name = "paired"
+		e.Data.Task = Task{Path: value, Title: "Task"}
+		raw, _ := json.Marshal(e)
+		if _, err := Decode(raw); err == nil {
+			t.Fatalf("unsafe path accepted: %q", value)
+		}
+	}
+	if !ValidPath("Tasks/中文任务.md") {
+		t.Fatal("valid relative path rejected")
 	}
 }
 func TestPrecisionAndDST(t *testing.T) {

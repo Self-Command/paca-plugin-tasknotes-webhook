@@ -1,7 +1,8 @@
 import hashlib, hmac, http.cookiejar, json, os, pathlib, secrets, subprocess, time, urllib.request, urllib.error
 
 ROOT=pathlib.Path(__file__).resolve().parent.parent
-manifest=json.loads((ROOT/'plugin.json').read_text())
+source_manifest=json.loads((ROOT/'plugin.json').read_text())
+manifest=json.loads((ROOT/f'release/wasm/{source_manifest["id"]}/plugin.json').read_text())
 plugin_id=manifest['id']
 password=secrets.token_urlsafe(24)
 new_password=secrets.token_urlsafe(24)
@@ -86,7 +87,16 @@ with sync_playwright() as pw:
     page.get_by_role('button',name=manifest['displayName'],exact=True).last.click(timeout=45000)
     page.get_by_role('status').filter(has_text='已连接宿主').wait_for(timeout=30000)
     page.screenshot(path=str(verification/'plugin-settings.png'),full_page=True)
+    page.goto(f'http://127.0.0.1:18081/projects/{project["id"]}/tasks/{target["id"]}',wait_until='domcontentloaded')
+    page.get_by_role('heading',name='TaskNotes 来源',exact=True).wait_for(timeout=30000)
+    page.screenshot(path=str(verification/'task-source.png'),full_page=True)
     browser.close()
+request('PATCH',f'/admin/plugins/{installed["id"]}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
+assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==3
+request('DELETE',f'/admin/plugins/{installed["id"]}',expected=204)
+request('GET',f'/plugins/{plugin_id}/health',expected=404)
+request('GET',f'/projects/{project["id"]}/tasks/{task["id"]}')
 report={'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'worker_hmac':True,'nonce_replay_rejected':True,'frontend_host':True,'task_crud':True,'disable_enable':True,'restart':True}
+report.update({'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
 (verification/'host-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'task_crud':True,'disable_enable':True,'restart':True}))

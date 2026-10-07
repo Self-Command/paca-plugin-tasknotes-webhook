@@ -11,7 +11,7 @@ import (
 )
 
 func TestDisabledOrMismatchedHostPreventsMutation(t *testing.T) {
-	for _, mode := range []string{"disabled", "version", "schema", "unavailable"} {
+	for _, mode := range []string{"disabled", "version", "schema", "source", "identity", "unavailable"} {
 		t.Run(mode, func(t *testing.T) {
 			mutations := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,6 +25,8 @@ func TestDisabledOrMismatchedHostPreventsMutation(t *testing.T) {
 					return
 				}
 				version := Version
+				source := buildinfo.SourceSHA
+				identity := PluginID
 				schema := 3
 				enabled := true
 				if mode == "disabled" {
@@ -36,7 +38,13 @@ func TestDisabledOrMismatchedHostPreventsMutation(t *testing.T) {
 				if mode == "schema" {
 					schema = 2
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"id": PluginID, "version": version, "schema_version": schema, "enabled": enabled})
+				if mode == "source" {
+					source = "0000000000000000000000000000000000000000"
+				}
+				if mode == "identity" {
+					identity = "com.other.plugin"
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": identity, "version": version, "source_sha": source, "schema_version": schema, "enabled": enabled})
 			}))
 			defer server.Close()
 			worker := &Worker{API: server.URL, Key: "private-test-key", Secret: "test-worker-secret", HTTP: server.Client()}

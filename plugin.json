@@ -257,6 +257,13 @@
         "label": "TaskNotes 接入",
         "order": 120,
         "requiredPermission": "tasknotes_webhook.read"
+      },
+      {
+        "point": "task.detail.section",
+        "component": "TaskSourceSection",
+        "label": "TaskNotes 来源",
+        "order": 110,
+        "requiredPermission": "tasknotes_webhook.read"
       }
     ]
   }

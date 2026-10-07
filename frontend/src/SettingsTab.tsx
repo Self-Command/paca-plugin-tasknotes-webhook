@@ -8,7 +8,7 @@ const inputClass = "w-full rounded-md border border-input bg-background px-3 py-
 const buttonClass = "rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent disabled:opacity-50";
 async function api<T>(path:string,method="GET",body?:unknown):Promise<T> {
   const r=await fetch(`/api/v1/plugins/${ID}${path}`,{method,credentials:"include",headers:{"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});
-  const data=await r.json();if(!r.ok) throw new Error(data.error?.message??data.message??`HTTP ${r.status}`);return data;
+  const data=await r.json();if(!r.ok) throw new Error(typeof data.error==="string"?data.error:data.error?.message??data.message??`HTTP ${r.status}`);return data;
 }
 export default function SettingsTab({projectId,canEdit=true}: {projectId:string;canEdit?:boolean}) {
   const base=`/projects/${encodeURIComponent(projectId)}`;
