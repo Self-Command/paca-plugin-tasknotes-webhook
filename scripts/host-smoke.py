@@ -42,7 +42,7 @@ else: raise RuntimeError('official API did not become ready')
 request('PATCH','/users/me/password',{'current_password':password,'new_password':new_password},204)
 request('POST','/auth/login',{'username':'admin','password':new_password})
 installed=request('POST','/admin/plugins',{'name':plugin_id,'version':legacy_manifest['version'],'manifest':legacy_manifest,'enabled':True},201)['data']
-assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==2
+assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==1
 worker_secret=request('POST',f'/plugins/{plugin_id}/admin/worker-credential',{},201)['secret']
 request('PATCH',f'/admin/plugins/{installed['id']}',{'enabled':False})
 cmd('docker','cp',str(current_package)+ '/.',f'paca-ci-api:/plugins/wasm/{plugin_id}/')
