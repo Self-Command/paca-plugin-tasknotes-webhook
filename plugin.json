@@ -237,6 +237,25 @@
         "method": "POST",
         "path": "/receive/:id",
         "public": true
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/tasks/:taskId/source-link",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
       }
     ],
     "sensitiveFields": {

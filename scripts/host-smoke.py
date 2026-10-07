@@ -110,6 +110,9 @@ with sync_playwright() as pw:
     page.screenshot(path=str(verification/'task-source.png'),full_page=True)
     browser.close()
 exec((ROOT/'scripts/obsidian-e2e.py').read_text(),globals())
+linked=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/tasks/{lost_id}/source-link')
+assert linked['connection_id']==connection_id and linked['snapshot']['status']=='done'
+request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/tasks/{task["id"]}/source-link',expected=404)
 reload_path=f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources'
 retained_sources=request('GET',reload_path)['items']
 request('PATCH',f'/admin/plugins/{installed["id"]}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
