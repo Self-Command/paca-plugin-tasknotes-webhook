@@ -229,6 +229,11 @@ func (w *Worker) Tick(ctx context.Context) error {
 		}
 		return err
 	}
+ // Official metadata refreshes omit details; absence is not a request to erase them.
+ if s.Snapshot!=nil {
+  if e.Data.Task.Details==nil { e.Data.Task.Details=s.Snapshot.Details }
+  if e.Data.Previous!=nil && e.Data.Previous.Details==nil { e.Data.Previous.Details=s.Snapshot.Details }
+ }
 	decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
 	if decision != "apply" {
 		if decision == "duplicate" {

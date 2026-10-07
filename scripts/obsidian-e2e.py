@@ -95,9 +95,9 @@ try:
             ui_page.keyboard.press('Control+p')
             ui_page.locator('.prompt-input').fill(search)
             ui_page.locator('.suggestion-item').filter(has_text=re.compile(label,re.I)).first.click()
-        def wait_event(event):
+        def wait_event(event,expected_title=None):
             for _ in range(120):
-                matches=[record for record in received if record['event']==event]
+                matches=[record for record in received if record['event']==event and (expected_title is None or record['data']['task']['title']==expected_title)]
                 if matches:
                     record=matches[-1]
                     rows=request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{ui_connection_id}/deliveries')['items']
@@ -120,7 +120,7 @@ try:
         open_edit(created)
         ui_page.locator('.title-input:visible,.title-input-detailed:visible').first.fill('Obsidian UI proof task renamed')
         ui_page.locator('.tn-task-modal__button-bar button.mod-cta').click()
-        changed=wait_event('task.updated')
+        changed=wait_event('task.updated','Obsidian UI proof task renamed')
         assert request('GET',f'/projects/{project["id"]}/tasks/{task_id}')['data']['title']==changed['title']
         open_edit(changed)
         ui_page.locator('[data-type="status"]').click()
