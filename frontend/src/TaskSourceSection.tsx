@@ -16,7 +16,7 @@ export default function TaskSourceSection({projectId,taskId}:{projectId:string;t
  if(!source)return null;
  return <section className="checkin-ui"><Card className="gap-3 py-4"><CardHeader><CardTitle><h3>TaskNotes 来源</h3></CardTitle></CardHeader><CardContent className="grid gap-3">
 
-  <p className="text-sm text-muted-foreground">标题、时间、状态、优先级和来源标签由 TaskNotes 管理；下一次成功同步会更新这些字段。Paca 改动不会写回 Obsidian。</p>
+  <p className="text-sm text-muted-foreground">任务内容由 TaskNotes 单向同步到 Paca。打卡状态、记录和照片可通过 Obsidian 打卡同步插件拉取。</p>
   <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">开始</dt><dd>{display(source.start_instant,source.start_source,source.timezone)}</dd></div><div><dt className="text-muted-foreground">截止</dt><dd>{display(source.due_instant,source.due_source,source.timezone)}</dd></div></dl>
   {source.archived&&<p className="text-sm">来源已归档，本插件保留 Paca 任务。</p>}
   {source.recurring&&<p className="text-sm">循环任务已导入；仅提醒当前任务，不自动安排后续循环。</p>}
