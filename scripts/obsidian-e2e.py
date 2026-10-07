@@ -143,10 +143,10 @@ try:
         request('GET',f'/projects/{project["id"]}/tasks/{task_id}',expected=404)
         assert len(request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{ui_connection_id}/sources')['items'])==1
         ui_page.screenshot(path=str(ROOT/'verification/obsidian-ui-six-events.png'))
-        browser.close()
-    report={'real_obsidian_ui':True,'obsidian_version':lock['obsidian']['version'],'official_tasknotes_version':lock['tasknotes']['version'],'release_source_sha':lock['tasknotes']['release_source_sha'],'review_source_sha':lock['tasknotes']['review_source_sha'],'official_assets_sha256_verified':True,'task_mutations_only_ui':True,'six_events':[x['event'] for x in received],'same_paca_task':True,'archive_folder_move':True,'delete_tombstone':True,'secret_redacted':True}
         extra_check=os.environ.get('OBSIDIAN_EXTRA_E2E')
         if extra_check:exec(pathlib.Path(extra_check).read_text(),globals(),locals())
+        browser.close()
+    report={'real_obsidian_ui':True,'obsidian_version':lock['obsidian']['version'],'official_tasknotes_version':lock['tasknotes']['version'],'release_source_sha':lock['tasknotes']['release_source_sha'],'review_source_sha':lock['tasknotes']['review_source_sha'],'official_assets_sha256_verified':True,'task_mutations_only_ui':True,'six_events':[x['event'] for x in received],'same_paca_task':True,'archive_folder_move':True,'delete_tombstone':True,'secret_redacted':True}
     (ROOT/'verification/obsidian-report.json').write_text(json.dumps(report,indent=2))
 except Exception:
     if ui_page:
