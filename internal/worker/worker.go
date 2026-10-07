@@ -145,6 +145,7 @@ func (w *Worker) call(ctx context.Context, method, path string, body any, out an
 
 type connection struct {
 	ID, Project, Timezone string
+ ArchiveTag string
 	Statuses              map[string]string
 	Priorities            map[string]int
 	Revision              int
@@ -187,7 +188,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 	}()
 	c := connection{ID: connectionID}
 	var sm, pm []byte
-	err = w.DB.QueryRow(ctx, "SELECT project_id::text,timezone,status_map,priority_map,revision FROM connections WHERE id=$1 AND enabled", connectionID).Scan(&c.Project, &c.Timezone, &sm, &pm, &c.Revision)
+	err = w.DB.QueryRow(ctx, "SELECT project_id::text,timezone,status_map,priority_map,revision,archive_tag FROM connections WHERE id=$1 AND enabled", connectionID).Scan(&c.Project, &c.Timezone, &sm, &pm, &c.Revision, &c.ArchiveTag)
 	if err != nil {
 		return err
 	}
@@ -217,7 +218,8 @@ func (w *Worker) Tick(ctx context.Context) error {
 	if err != nil {
 		return w.finish(ctx, id, "conflict", "invalid stored envelope")
 	}
-	s, err := w.resolve(ctx, c, e)
+	if err=w.hydrateLegacy(ctx,c.ID);err!=nil { return err }
+ s, err := w.resolve(ctx, c, e)
 	if err != nil {
 		var conflict associationConflict
 		if errors.As(err, &conflict) {
@@ -225,7 +227,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 		}
 		return err
 	}
-	decision, message := eventDecision(s, e, time.Now())
+	decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
 	if decision != "apply" {
 		if decision == "duplicate" {
 			return w.applied(ctx, id, s, e, s.State)
@@ -381,7 +383,7 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 			var id int64
 			var raw []byte
 			var t tasknotes.Task
-			if rows.Scan(&id, &raw) == nil && json.Unmarshal(raw, &t) == nil && tasknotes.CanonicalHash(candidate, true) == tasknotes.CanonicalHash(t, true) {
+			if rows.Scan(&id, &raw) == nil && json.Unmarshal(raw, &t) == nil && ((e.Data.Previous!=nil && tasknotes.CanonicalHash(candidate,false)==tasknotes.CanonicalHash(t,false)) || (e.Data.Previous==nil && tasknotes.ArchiveEquivalent(candidate,t,c.ArchiveTag))) {
 				matches = append(matches, id)
 			}
 		}

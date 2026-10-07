@@ -7,7 +7,10 @@ import (
 
 // No client timestamp is represented as a globally monotonic revision.
 func eventDecision(s source, e tasknotes.Envelope, now time.Time) (string, string) {
-	stamp := e.Version()
+	return eventDecisionWithArchive(s,e,now,"archived")
+}
+func eventDecisionWithArchive(s source,e tasknotes.Envelope,now time.Time,archiveTag string)(string,string){
+ stamp := e.Version()
 	if stamp.After(now.Add(5 * time.Minute)) {
 		return "conflict", "source clock is ahead; correct clock and resolve"
 	}
@@ -37,7 +40,7 @@ func eventDecision(s source, e tasknotes.Envelope, now time.Time) (string, strin
 		t := e.EffectiveTask()
 		switch e.Event {
 		case "task.archived", "task.unarchived":
-			if tasknotes.CanonicalHash(t, true) == tasknotes.CanonicalHash(*s.Snapshot, true) {
+			if tasknotes.ArchiveEquivalent(t,*s.Snapshot,archiveTag) {
 				return "apply", ""
 			}
 		case "task.deleted":

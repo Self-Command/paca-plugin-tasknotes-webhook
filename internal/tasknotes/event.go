@@ -27,6 +27,7 @@ type Task struct {
 	Archived     bool     `json:"archived"`
 	Tags         []string `json:"tags"`
 	DateModified string   `json:"dateModified"`
+ DateCreated string `json:"dateCreated,omitempty"`
 	Recurrence   any      `json:"recurrence"`
 }
 
@@ -182,6 +183,18 @@ func (e Envelope) SnapshotHash() string {
 	return Hash([]byte(kind + "\n" + CanonicalHash(e.EffectiveTask(), false)))
 }
 
+// Archive moves keep the filename and birth time; remove only the configured archive tag.
+func ArchiveEquivalent(a,b Task,archiveTag string) bool {
+ if path.Base(a.Path)!=path.Base(b.Path) { return false }
+ strip:=func(t Task) Task {
+  t.Archived=false
+  tags:=[]string{}
+  for _,tag:=range NormalizeTags(t.Tags) { if tag!=strings.TrimPrefix(archiveTag,"#") { tags=append(tags,tag) } }
+  t.Tags=tags
+  return t
+ }
+ return CanonicalHash(strip(a),false)==CanonicalHash(strip(b),false)
+}
 // Used only to verify the old accepted inbox during a schema-3 upgrade.
 func (e Envelope) LegacySnapshotHash() string {
 	kind := "live"
@@ -191,7 +204,9 @@ func (e Envelope) LegacySnapshotHash() string {
 	if e.Event == "task.archived" || e.Data.Task.Archived {
 		kind = "archived"
 	}
-	b, _ := json.Marshal(e.Data.Task)
+	legacy := e.Data.Task
+ legacy.DateCreated=""
+ b, _ := json.Marshal(legacy)
 	return Hash(append([]byte(kind+"\n"), b...))
 }
 

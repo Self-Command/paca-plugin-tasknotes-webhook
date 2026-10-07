@@ -70,7 +70,24 @@ try:
         browser=pw.chromium.connect_over_cdp(cdp)
         context=browser.contexts[0]
         ui_page=context.pages[0] if context.pages else context.wait_for_event('page')
-        ui_page.wait_for_function('()=>Boolean(window.app?.plugins?.plugins?.tasknotes?.cacheManager)',timeout=90000)
+        def save_diagnostic(name):
+            (ROOT/f'verification/{name}.json').write_text(json.dumps({'pages':[p.url for p in context.pages],'body':ui_page.locator('body').inner_text()[:20000]},indent=2))
+            try:
+                data=ui_page.evaluate('async()=>{const {remote}=require("electron");return (await remote.getCurrentWindow().capturePage()).toPNG().toString("base64")}')
+                import base64
+                (ROOT/f'verification/{name}.png').write_bytes(base64.b64decode(data))
+            except Exception:pass
+        ui_page.wait_for_function('()=>Boolean(window.app?.workspace?.layoutReady)',timeout=60000)
+        assert pathlib.Path(ui_page.evaluate('()=>app.vault.adapter.basePath'))==vault,'refuse an unexpected vault'
+        for label in ['Trust author and enable plugins','Turn on community plugins','Enable community plugins']:
+            button=ui_page.get_by_role('button',name=label,exact=True)
+            if button.is_visible():button.click()
+        save_diagnostic('obsidian-startup')
+        try:
+            ui_page.wait_for_function('()=>Boolean(window.app?.plugins?.plugins?.tasknotes?.cacheManager)',timeout=60000)
+        except Exception:
+            save_diagnostic('obsidian-plugin-load-failure');raise
+        for _ in range(3):ui_page.keyboard.press('Escape')
         version=ui_page.evaluate('()=>window.require("obsidian").getAppVersion()')
         assert version==lock['obsidian']['version'],f'Obsidian runtime changed: {version}'
         ui_page.evaluate('()=>window.localStorage.setItem("language","en")')

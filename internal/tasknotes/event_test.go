@@ -86,3 +86,13 @@ func TestSnapshotIgnoresClockAndPathButKeepsManagedFields(t *testing.T) {
 		t.Fatal("stale cached archived flag overrode unarchive")
 	}
 }
+
+func TestArchiveMoveIgnoresOnlyConfiguredTag(t *testing.T) {
+ original:=Task{Path:"Tasks/one.md",Title:"one",DateCreated:"2026-10-07T00:00:00Z",Tags:[]string{"task","study"}}
+ moved:=original;moved.Path="Archive/one.md";moved.Archived=true;moved.Tags=[]string{"task","study","custom-archive"}
+ if !ArchiveEquivalent(original,moved,"custom-archive"){t.Fatal("official archive tag broke move association")}
+ moved.DateCreated="2026-10-07T00:00:01Z"
+ if ArchiveEquivalent(original,moved,"custom-archive"){t.Fatal("another task birth time merged")}
+ moved=original;moved.Path="Archive/another.md"
+ if ArchiveEquivalent(original,moved,"archived"){t.Fatal("another filename merged")}
+}

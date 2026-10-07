@@ -23,13 +23,16 @@ type connectionInput struct {
 	StatusMap   map[string]string `json:"status_map"`
 	PriorityMap map[string]int    `json:"priority_map"`
 	Revision    int               `json:"revision"`
+ ArchiveTag string `json:"archive_tag"`
 }
 
 func validateConnection(c *connectionInput) bool {
 	if c.Secret != "" && (len(c.Secret) < 32 || len(c.Secret) > 256 || strings.TrimSpace(c.Secret) != c.Secret || strings.ContainsAny(c.Secret, "\r\n\t\x00")) {
 		return false
 	}
-	if c.Timezone == "" {
+	if c.ArchiveTag=="" { c.ArchiveTag="archived" }
+ if len(c.ArchiveTag)>128 || tasknotes.CleanText(c.ArchiveTag)!=c.ArchiveTag { return false }
+ if c.Timezone == "" {
 		c.Timezone = "Asia/Shanghai"
 	}
 	if _, err := time.LoadLocation(c.Timezone); err != nil {
@@ -69,7 +72,7 @@ func (p *integrationPlugin) audit(req *plugin.Request, action, subject string) {
 	_, _ = p.db.Exec("INSERT INTO audit_log(project_id,actor_id,action,subject) VALUES($1,$2,$3,$4)", req.PathParam("projectId"), req.Caller.UserID, action, subject)
 }
 func (p *integrationPlugin) connections(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT id::text,name,enabled,timezone,status_map::text,priority_map::text,revision FROM connections WHERE project_id=$1 ORDER BY created_at", req.PathParam("projectId"))
+	rows, err := p.db.Query("SELECT id::text,name,enabled,timezone,status_map::text,priority_map::text,revision,archive_tag FROM connections WHERE project_id=$1 ORDER BY created_at", req.PathParam("projectId"))
 	if err != nil {
 		res.Error(503, "connections unavailable")
 		return
@@ -79,7 +82,7 @@ func (p *integrationPlugin) connections(req *plugin.Request, res *plugin.Respons
 		var statuses, priorities any
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[4])), &statuses)
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[5])), &priorities)
-		items = append(items, map[string]any{"id": r[0], "name": r[1], "enabled": r[2], "timezone": r[3], "status_map": statuses, "priority_map": priorities, "revision": r[6]})
+		items = append(items, map[string]any{"id": r[0], "name": r[1], "enabled": r[2], "timezone": r[3], "status_map": statuses, "priority_map": priorities, "revision": r[6], "archive_tag":r[7]})
 	}
 	res.JSON(200, map[string]any{"items": items})
 }
@@ -110,7 +113,7 @@ func (p *integrationPlugin) createConnection(req *plugin.Request, res *plugin.Re
 	}
 	sm, _ := json.Marshal(c.StatusMap)
 	pm, _ := json.Marshal(c.PriorityMap)
-	_, err = p.db.Exec("INSERT INTO connections(id,project_id,name,secret_enc,enabled,timezone,status_map,priority_map) VALUES($1,$2,$3,$4,TRUE,$5,$6::jsonb,$7::jsonb)", id, req.PathParam("projectId"), c.Name, cipher, c.Timezone, string(sm), string(pm))
+	_, err = p.db.Exec("INSERT INTO connections(id,project_id,name,secret_enc,enabled,timezone,status_map,priority_map,archive_tag) VALUES($1,$2,$3,$4,TRUE,$5,$6::jsonb,$7::jsonb,$8)", id, req.PathParam("projectId"), c.Name, cipher, c.Timezone, string(sm), string(pm), c.ArchiveTag)
 	if err != nil {
 		res.Error(503, "connection persistence failed")
 		return
@@ -132,7 +135,7 @@ func (p *integrationPlugin) updateConnection(req *plugin.Request, res *plugin.Re
 	}
 	sm, _ := json.Marshal(c.StatusMap)
 	pm, _ := json.Marshal(c.PriorityMap)
-	n, err := p.db.Exec("UPDATE connections SET name=$1,enabled=$2,timezone=$3,status_map=$4::jsonb,priority_map=$5::jsonb,secret_enc=COALESCE(NULLIF($9,''),secret_enc),revision=revision+1 WHERE id=$6 AND project_id=$7 AND revision=$8", c.Name, c.Enabled, c.Timezone, string(sm), string(pm), req.PathParam("id"), req.PathParam("projectId"), c.Revision, cipher)
+	n, err := p.db.Exec("UPDATE connections SET name=$1,enabled=$2,timezone=$3,status_map=$4::jsonb,priority_map=$5::jsonb,secret_enc=COALESCE(NULLIF($9,''),secret_enc),archive_tag=$10,revision=revision+1 WHERE id=$6 AND project_id=$7 AND revision=$8", c.Name, c.Enabled, c.Timezone, string(sm), string(pm), req.PathParam("id"), req.PathParam("projectId"), c.Revision, cipher, c.ArchiveTag)
 	if err != nil {
 		res.Error(503, "connection update failed")
 		return
@@ -197,7 +200,8 @@ func (p *integrationPlugin) receive(req *plugin.Request, res *plugin.Response) {
 		return
 	}
 	if !tasknotes.ValidSignature(req.Body, secret, requestHeader(req, "X-TaskNotes-Signature")) {
-		res.Error(401, "invalid webhook signature")
+		_, _ = p.db.Exec("INSERT INTO receiver_stats(connection_id,signature_failures,last_signature_failure) VALUES($1,1,NOW()) ON CONFLICT(connection_id) DO UPDATE SET signature_failures=receiver_stats.signature_failures+1,last_signature_failure=NOW()",id)
+  res.Error(401, "invalid webhook signature")
 		return
 	}
 	e, err := tasknotes.Decode(req.Body)
@@ -238,7 +242,10 @@ func (p *integrationPlugin) deliveries(req *plugin.Request, res *plugin.Response
 	for _, r := range rows.Rows {
 		items = append(items, map[string]any{"id": r[0], "delivery_id": r[1], "event": r[2], "state": r[3], "error": r[4], "attempts": r[5], "received_at": r[6]})
 	}
-	res.JSON(200, map[string]any{"items": items})
+	stats,statsErr:=p.db.Query("SELECT COALESCE(s.signature_failures,0),s.last_signature_failure::text FROM connections c LEFT JOIN receiver_stats s ON s.connection_id=c.id WHERE c.id=$1 AND c.project_id=$2",req.PathParam("id"),req.PathParam("projectId"))
+ diagnostics:=map[string]any{"signature_failures":0}
+ if statsErr==nil && len(stats.Rows)==1 {diagnostics["signature_failures"]=stats.Rows[0][0];diagnostics["last_signature_failure"]=stats.Rows[0][1]}
+ res.JSON(200,map[string]any{"items":items,"diagnostics":diagnostics})
 }
 func (p *integrationPlugin) reprocess(req *plugin.Request, res *plugin.Response) {
 	n, err := p.db.Exec("UPDATE inbox SET state='pending',next_attempt=NOW(),updated_at=NOW() WHERE connection_id=$1 AND delivery_id=$2 AND state IN ('error','conflict','uncertain') AND EXISTS(SELECT 1 FROM connections c WHERE c.id=inbox.connection_id AND c.project_id=$3)", req.PathParam("id"), req.PathParam("deliveryId"), req.PathParam("projectId"))

@@ -147,10 +147,17 @@ assert not calendar['custom_fields']['_integration_state_v1']['recurring']
 renamed={**changed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md'}
 renamed=send_case('task.updated',renamed,'rename-with-previous',changed)
 assert len(request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'])==2
-renamed=send_case('task.archived',{**renamed,'path':'Archive/Renamed.md','id':'Archive/Renamed.md','archived':True},'archive')
+# Simulate a schema-3 source before its first post-upgrade event is an archive move.
+legacy_task={}
+for key in ['id','path','title','status','priority','scheduled','due','archived','tags','dateModified','recurrence']:
+    legacy_task[key]=renamed.get(key,False if key=='archived' else [] if key=='tags' else None if key=='recurrence' else '')
+legacy_raw=json.dumps(legacy_task,ensure_ascii=False,separators=(',',':'))
+legacy_hash=hashlib.sha256(('live\n'+legacy_raw).encode()).hexdigest()
+cmd('docker','exec','paca-ci-db','psql','-U','postgres','-d','paca','-c',f"UPDATE plugin_data_com_selfcommand_tasknotes_webhook.sources SET snapshot=NULL,event_at=NULL,last_event='',snapshot_hash='{legacy_hash}' WHERE paca_task_id='{lost_id}'")
+renamed=send_case('task.archived',{**renamed,'path':'Archive/Renamed.md','id':'Archive/Renamed.md','archived':True,'tags':[*renamed.get('tags',[]),'archived']},'archive')
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['status_id']==archive_status['id']
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
-renamed=send_case('task.unarchived',{**renamed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md','archived':False},'unarchive')
+renamed=send_case('task.unarchived',{**renamed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md','archived':False,'tags':[t for t in renamed.get('tags',[]) if t!='archived']},'unarchive')
 assert not request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
 renamed=send_case('task.completed',{**renamed,'status':'done'},'complete')
 statuses=request('GET',f'/projects/{project["id"]}/task-statuses')['data']['items']
