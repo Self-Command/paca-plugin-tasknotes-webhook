@@ -90,9 +90,10 @@ with sync_playwright() as pw:
     page=context.new_page()
     page.goto(f'http://127.0.0.1:18081/projects/{project["id"]}/settings/',wait_until='domcontentloaded')
     page.get_by_role('button',name=manifest['displayName'],exact=True).last.click(timeout=45000)
-    page.get_by_role('status').filter(has_text='已连接宿主').wait_for(timeout=30000)
-    page.get_by_label('项目连接',exact=True).select_option(connection_id)
-    field=page.get_by_label('TaskNotes 生成的 Secret',exact=True)
+    page.get_by_role('status').filter(has_text='已连接' ).wait_for(timeout=30000)
+    page.get_by_label('项目连接',exact=True).click()
+    page.get_by_role('option',name='Official TaskNotes fixture',exact=True).click()
+    field=page.get_by_label('签名密钥（TaskNotes Secret）',exact=True)
     assert field.get_attribute('type')=='password'
     ui_secret=secrets.token_hex(32)
     field.fill(ui_secret)
