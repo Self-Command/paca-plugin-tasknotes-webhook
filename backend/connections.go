@@ -268,7 +268,7 @@ func (p *integrationPlugin) reprocess(req *plugin.Request, res *plugin.Response)
 	res.JSON(200, map[string]any{"queued": true})
 }
 func (p *integrationPlugin) sources(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT s.id,s.source_key,COALESCE(s.paca_task_id::text,''),s.state,s.external_ref FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 ORDER BY s.id DESC LIMIT 100", req.PathParam("id"), req.PathParam("projectId"))
+	rows, err := p.db.Query("SELECT s.id,COALESCE(s.snapshot->>'path',s.source_key),COALESCE(s.paca_task_id::text,''),s.state,s.external_ref FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 ORDER BY s.id DESC LIMIT 100", req.PathParam("id"), req.PathParam("projectId"))
 	if err != nil {
 		res.Error(503, "source associations unavailable")
 		return

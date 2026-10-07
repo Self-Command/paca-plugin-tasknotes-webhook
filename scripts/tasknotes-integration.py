@@ -154,8 +154,11 @@ for key in ['id','path','title','status','priority','scheduled','due','archived'
 legacy_raw=json.dumps(legacy_task,ensure_ascii=False,separators=(',',':'))
 legacy_hash=hashlib.sha256(('live\n'+legacy_raw).encode()).hexdigest()
 cmd('docker','exec','paca-ci-db','psql','-U','postgres','-d','paca','-c',f"UPDATE plugin_data_com_selfcommand_tasknotes_webhook.sources SET snapshot=NULL,event_at=NULL,last_event='',snapshot_hash='{legacy_hash}' WHERE paca_task_id='{lost_id}'")
+# A pre-fix failed update may have reserved the destination without ever creating a core task.
+cmd('docker','exec','paca-ci-db','psql','-U','postgres','-d','paca','-c',f"WITH placeholder AS (INSERT INTO plugin_data_com_selfcommand_tasknotes_webhook.sources(connection_id,vault_key,source_key,external_ref,state) VALUES('{connection_id}','connection','Archive/Renamed.md','tasknotes:ci-never-created','unassociated') RETURNING id) INSERT INTO plugin_data_com_selfcommand_tasknotes_webhook.path_aliases(connection_id,vault_key,path,source_id) SELECT '{connection_id}','connection','Archive/Renamed.md',id FROM placeholder")
 renamed=send_case('task.archived',{**renamed,'path':'Archive/Renamed.md','id':'Archive/Renamed.md','archived':True,'tags':[*renamed.get('tags',[]),'archived']},'archive')
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['status_id']==archive_status['id']
+assert next(source for source in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'] if source['external_ref']=='tasknotes:ci-never-created')['state']=='superseded'
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']
 renamed=send_case('task.unarchived',{**renamed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md','archived':False,'tags':[t for t in renamed.get('tags',[]) if t!='archived']},'unarchive')
 assert not request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['custom_fields']['_integration_state_v1']['archived']

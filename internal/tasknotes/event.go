@@ -161,8 +161,10 @@ func (e Envelope) EffectiveTask() Task {
 
 // CanonicalHash excludes volatile timestamps and path-derived identity, never title alone.
 func CanonicalHash(t Task, ignoreArchived bool) string {
-	if t.Details!=nil && *t.Details=="" { t.Details=nil }
- t.ID = ""
+	if t.Details != nil && *t.Details == "" {
+		t.Details = nil
+	}
+	t.ID = ""
 	t.Path = ""
 	t.DateModified = ""
 	if !t.Recurring() {

@@ -229,11 +229,15 @@ func (w *Worker) Tick(ctx context.Context) error {
 		}
 		return err
 	}
- // Official metadata refreshes omit details; absence is not a request to erase them.
- if s.Snapshot!=nil {
-  if e.Data.Task.Details==nil { e.Data.Task.Details=s.Snapshot.Details }
-  if e.Data.Previous!=nil && e.Data.Previous.Details==nil { e.Data.Previous.Details=s.Snapshot.Details }
- }
+	// Official metadata refreshes omit details; absence is not a request to erase them.
+	if s.Snapshot != nil {
+		if e.Data.Task.Details == nil {
+			e.Data.Task.Details = s.Snapshot.Details
+		}
+		if e.Data.Previous != nil && e.Data.Previous.Details == nil {
+			e.Data.Previous.Details = s.Snapshot.Details
+		}
+	}
 	decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
 	if decision != "apply" {
 		if decision == "duplicate" {
@@ -367,7 +371,14 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 		var oldID int64
 		oldID, oldErr := sourceForPath(ctx, tx, c.ID, e.Data.Previous.Path)
 		if oldErr == nil && oldID != sid {
-			return source{}, associationConflict{"rename would merge two sources; manual resolution required"}
+			adopted, adoptErr := adoptPlaceholder(ctx, tx, sid, oldID)
+			if adoptErr != nil {
+				return source{}, adoptErr
+			}
+			if !adopted {
+				return source{}, associationConflict{"rename would merge two linked sources; manual resolution required"}
+			}
+			sid = oldID
 		}
 		if oldErr != nil && !errors.Is(oldErr, pgx.ErrNoRows) {
 			return source{}, oldErr
@@ -375,6 +386,17 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 	}
 	if errors.Is(err, pgx.ErrNoRows) && e.Data.Previous != nil && e.Data.Previous.Path != path {
 		sid, err = sourceForPath(ctx, tx, c.ID, e.Data.Previous.Path)
+	}
+	var placeholder int64
+	if err == nil && (e.Event == "task.archived" || e.Event == "task.unarchived") {
+		var empty bool
+		if queryErr := tx.QueryRow(ctx, "SELECT state='unassociated' AND paca_task_id IS NULL FROM sources WHERE id=$1", sid).Scan(&empty); queryErr != nil {
+			return source{}, queryErr
+		}
+		if empty {
+			placeholder = sid
+			err = pgx.ErrNoRows
+		}
 	}
 	if errors.Is(err, pgx.ErrNoRows) && (e.Event == "task.archived" || e.Event == "task.unarchived" || e.Data.Previous != nil) {
 		candidate := e.Data.Task
@@ -404,6 +426,20 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 		}
 		if len(matches) > 1 {
 			return source{}, associationConflict{"multiple full snapshots match the moved task; manual association required"}
+		}
+	}
+	if placeholder != 0 {
+		if errors.Is(err, pgx.ErrNoRows) {
+			sid = placeholder
+			err = nil
+		} else if err == nil && sid != placeholder {
+			adopted, adoptErr := adoptPlaceholder(ctx, tx, placeholder, sid)
+			if adoptErr != nil {
+				return source{}, adoptErr
+			}
+			if !adopted {
+				return source{}, associationConflict{"existing path must be linked manually"}
+			}
 		}
 	}
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -107,9 +107,17 @@ func TestArchiveMoveIgnoresOnlyConfiguredTag(t *testing.T) {
 	}
 }
 
-func TestEmptyDetailsEquivalentToOfficialCacheOmission(t *testing.T){
- empty:="";first:=Task{Title:"task",Details:&empty};cached:=first;cached.Details=nil
- if CanonicalHash(first,false)!=CanonicalHash(cached,false){t.Fatal("empty details cache refresh became edit")}
- text:="real details";first.Details=&text
- if CanonicalHash(first,false)==CanonicalHash(cached,false){t.Fatal("nonempty details ignored")}
+func TestEmptyDetailsEquivalentToOfficialCacheOmission(t *testing.T) {
+	empty := ""
+	first := Task{Title: "task", Details: &empty}
+	cached := first
+	cached.Details = nil
+	if CanonicalHash(first, false) != CanonicalHash(cached, false) {
+		t.Fatal("empty details cache refresh became edit")
+	}
+	text := "real details"
+	first.Details = &text
+	if CanonicalHash(first, false) == CanonicalHash(cached, false) {
+		t.Fatal("nonempty details ignored")
+	}
 }
