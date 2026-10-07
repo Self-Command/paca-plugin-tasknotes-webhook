@@ -241,6 +241,9 @@ func (w *Worker) Tick(ctx context.Context) error {
 	if s.State == "deleted" {
 		return w.finish(ctx, id, "conflict", "source tombstoned; explicit new association required")
 	}
+	if s.State == "unassociated" && e.Event != "task.created" && e.Event != "task.deleted" {
+		return w.finish(ctx, id, "conflict", "unknown source path; verify rename or missed creation and associate manually")
+	}
 	if s.State == "creating" || s.State == "uncertain" {
 		found, err := w.findRef(ctx, c.Project, s.Ref)
 		if err != nil {
@@ -379,7 +382,11 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 			return source{}, err
 		}
 		ref := "tasknotes:" + hex.EncodeToString(b)
-		err = tx.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,external_ref) VALUES($1,$2,$3,$4) RETURNING id", c.ID, e.VaultKey(), path, ref).Scan(&sid)
+		initialState := "new"
+		if e.Event != "task.created" && e.Event != "task.deleted" {
+			initialState = "unassociated"
+		}
+		err = tx.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,external_ref,state) VALUES($1,$2,$3,$4,$5) RETURNING id", c.ID, e.VaultKey(), path, ref, initialState).Scan(&sid)
 	}
 	if err != nil {
 		return source{}, err

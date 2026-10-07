@@ -140,6 +140,28 @@ assert not request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['
 renamed=send_case('task.completed',{**renamed,'status':'done'},'complete')
 statuses=request('GET',f'/projects/{project["id"]}/task-statuses')['data']['items']
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['status_id']==next(x['id'] for x in statuses if x['category']=='done')
+
+# An unknown update may be a rename without oldPath. Do not silently create a duplicate.
+unknown={**lost,'event':'task.updated','timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+unknown['data']={'task':{**lost['data']['task'],'path':'Tasks/MissingPrevious.md','id':'Tasks/MissingPrevious.md','title':'需要人工核对','dateModified':unknown['timestamp']}}
+before_requests=create_requests
+send_official(0,202,'missing-previous',json.dumps(unknown))
+for _ in range(60):
+    record=next(x for x in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/deliveries')['items'] if x['delivery_id']=='missing-previous')
+    if record['state']=='conflict': break
+    time.sleep(0.5)
+else: raise AssertionError('Unknown path was not held for manual association')
+assert create_requests==before_requests
+source=next(x for x in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'] if x['path']=='Tasks/MissingPrevious.md')
+target=request('POST',f'/projects/{project["id"]}/tasks',{'title':'Verified manual target'},201)['data']
+request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/link',{'source_id':source['id'],'task_id':target['id']},202)
+request('POST',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/reprocess/missing-previous',{})
+for _ in range(60):
+    record=next(x for x in request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/deliveries')['items'] if x['delivery_id']=='missing-previous')
+    if record['state']=='applied': break
+    time.sleep(0.5)
+else: raise AssertionError('Manual association was not verified')
+assert request('GET',f'/projects/{project["id"]}/tasks/{target["id"]}')['data']['title']=='需要人工核对'
 send_official(0,202,'stale-delivery')
 time.sleep(3)
 assert request('GET',f'/projects/{project["id"]}/tasks/{imported_id}')['data']['title']=='官方任务已修改'
@@ -153,4 +175,4 @@ worker_process.terminate()
 worker_process.wait(timeout=10)
 log.close()
 proxy.shutdown()
-(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True,'paired_vault_identity_across_computers':True,'explicit_rename':True,'archive_unarchive':True,'completion_status':True},indent=2))
+(ROOT/'verification/tasknotes-report.json').write_text(json.dumps({'official_source':fixtures['source_sha'],'signed_inbox':True,'deduplicate':True,'concurrent_duplicate':True,'different_duplicate_rejected':True,'create_update_same_task':True,'preserve_unmanaged_tags':True,'stale_event':True,'delete_tombstone':True,'lost_create_response_reconciled':True,'day_precision':True,'paired_vault_identity_across_computers':True,'explicit_rename':True,'archive_unarchive':True,'completion_status':True,'unknown_update_requires_association':True,'manual_link_verified':True},indent=2))

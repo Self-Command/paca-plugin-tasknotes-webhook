@@ -60,6 +60,9 @@ Do not share an administrator API key with a production worker.
 `pending` / `error` deliveries retry with backoff. `uncertain` deliveries query the external marker;
 zero matching tasks is not proof that the original create failed. Confirm the result and use manual association
 before reprocessing. Multiple matches and same-timestamp changes require a human decision.
+An update at a previously unseen path is held for manual association: it may be an undocumented rename
+or a missed creation. Resolve same-timestamp differences in TaskNotes and save a new version before
+reprocessing; the receiver never guesses a winner or merges tasks by title.
 Applied deliveries cannot be replayed. Reprocessing retains creation intent and tombstones.
 
 TaskNotes is the owner of title, dates, status, importance and source tags. Paca v0.18.6 stores its native dates as SQL DATE, so accurate source instants remain in `_integration_state_v1` version 2. The native field holds the calendar day in the configured timezone. The `start_core_date` / `due_core_date` metadata binds each accurate instant to that native day; changing the native day invalidates precision. Date-only source values are retained in metadata with null native dates, so no midnight reminder is inferred.
