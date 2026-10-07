@@ -90,3 +90,5 @@ See the `host-verification` artifact for actual results; a source commit alone i
 使用事件时间与独立任务修改时间、可验证的前序快照和来源墓碑；归档映射使用 `status_map["@archived"]` 的项目状态 UUID。旧 schema 3 关联原地升级至 schema 4，不重建任务。
 
 所有验证在 Action：控制器协议测试及真实官方 Obsidian 1.14.4 / TaskNotes 4.13.8 隔离 vault 界面测试。`scripts/obsidian-fixture-lock.json` 锁发行资产 SHA256；实际发行源码为 `1ba391b957c6fbbdc484716bbc5a284f5f02e59d`，审查提交 `69535cd956d11474b980deef8429ff0be232185f` 较它多四个提交，二者分别记录，不以自定义插件产物代替。
+
+数据库访问为每个插件加独立查询标识，避免官方宿主共享 PostgreSQL 连接池在切换 schema 后复用其他插件的缓存执行计划。保持独立 schema、角色和 API 边界，使用三个插件的匹配发行产物。
