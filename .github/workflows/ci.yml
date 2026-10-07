@@ -132,17 +132,26 @@ jobs:
           build-args: SOURCE_SHA=${{ github.sha }}
           tags: ghcr.io/self-command/${{ github.event.repository.name }}-worker:sha-${{ github.sha }}
       - name: Published worker architecture smoke tests
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          image="ghcr.io/self-command/${GITHUB_REPOSITORY#*/}-worker:sha-$GITHUB_SHA"
+          image="ghcr.io/self-command/${GITHUB_REPOSITORY#*/}-worker@$IMAGE_DIGEST"
           for arch in amd64 arm64; do
             docker run --rm --platform "linux/$arch" "$image" --version | jq --exit-status --arg sha "$GITHUB_SHA" '.source_sha == $sha'
           done
+      - uses: actions/download-artifact@v4
+        with:
+          name: host-verification
+          path: host-verification/
+      - name: Verification reports
+        run: cp host-verification/*report.json release/assets/
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
           printf '%s\n' "ghcr.io/self-command/${GITHUB_REPOSITORY#*/}-worker@$IMAGE_DIGEST" > release/assets/image-digest.txt
+          (cd release/assets && sha256sum *.tar.gz *.json image-digest.txt > checksums.txt)
           tag="v0.1.0-dev.${GITHUB_RUN_NUMBER}"
           flags="--prerelease"
           if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; flags=""; fi

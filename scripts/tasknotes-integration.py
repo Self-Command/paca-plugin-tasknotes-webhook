@@ -120,9 +120,13 @@ def send_case(event, task, delivery, previous=None, vault_path='/ci/other-comput
         time.sleep(0.5)
     raise AssertionError(f'{delivery} was not applied: {record}')
 
-changed={**lost['data']['task'],'title':'同一 vault 换电脑','scheduled':'2026-10-10T09:00:00+08:00'}
+changed={**lost['data']['task'],'title':'同一 vault 换电脑','scheduled':'2026-10-10T00:10:00+08:00','recurrence':''}
 changed=send_case('task.updated',changed,'other-computer')
 assert request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']['title']==changed['title']
+calendar=request('GET',f'/projects/{project["id"]}/tasks/{lost_id}')['data']
+assert calendar['start_date']=='2026-10-10T00:00:00Z'
+assert calendar['custom_fields']['_integration_state_v1']['start_instant']=='2026-10-09T16:10:00Z'
+assert not calendar['custom_fields']['_integration_state_v1']['recurring']
 renamed={**changed,'path':'Tasks/Renamed.md','id':'Tasks/Renamed.md'}
 renamed=send_case('task.updated',renamed,'rename-with-previous',changed)
 assert len(request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources')['items'])==2
