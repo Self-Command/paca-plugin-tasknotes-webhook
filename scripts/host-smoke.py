@@ -96,12 +96,15 @@ with sync_playwright() as pw:
     page.get_by_role('heading',name='TaskNotes 来源',exact=True).wait_for(timeout=30000)
     page.screenshot(path=str(verification/'task-source.png'),full_page=True)
     browser.close()
+reload_path=f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources'
+retained_sources=request('GET',reload_path)['items']
 request('PATCH',f'/admin/plugins/{installed["id"]}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
 assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==3
+assert request('GET',reload_path)['items']==retained_sources,'Manifest reload changed source associations'
 request('DELETE',f'/admin/plugins/{installed["id"]}',expected=204)
 request('GET',f'/plugins/{plugin_id}/health',expected=404)
 request('GET',f'/projects/{project["id"]}/tasks/{task["id"]}')
 report={'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'worker_hmac':True,'nonce_replay_rejected':True,'frontend_host':True,'task_crud':True,'disable_enable':True,'restart':True}
-report.update({'historical_package_upgrade':True,'upgrade_source':legacy_source,'worker_credential_preserved':True,'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
+report.update({'historical_package_upgrade':True,'upgrade_source':legacy_source,'worker_credential_preserved':True,'manifest_reload_preserves_business_data':True,'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
 (verification/'host-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'task_crud':True,'disable_enable':True,'restart':True}))

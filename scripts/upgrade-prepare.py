@@ -5,14 +5,14 @@ def prepare_upgrade():
     assert os.environ.get('GITHUB_ACTIONS')=='true','Actions-only upgrade fixture'
     repo=os.environ['GITHUB_REPOSITORY']
     expected={
-        'Self-Command/paca-plugin-tasknotes-webhook':'e209f8fcac73399b4600a2087b4019e0e7cacde3',
-        'Self-Command/paca-plugin-pushgo-queue':'c647ed5793e7689cd5f34417413a9668e21854bd',
+        'Self-Command/paca-plugin-tasknotes-webhook':'bf4415b52780a62b3f903c2459b332b534f57f3e',
+        'Self-Command/paca-plugin-pushgo-queue':'795297b55524476012e7688522bd580176d3e1b8',
     }[repo]
     staging=ROOT/'ci-upgrade'
     staging.mkdir(exist_ok=True)
     current=staging/'current'
     shutil.copytree(ROOT/f'release/wasm/{plugin_id}',current)
-    url=f'https://github.com/{repo}/releases/download/v0.1.0-dev.4/'
+    url=f'https://github.com/{repo}/releases/download/v0.1.0-dev.10/'
     def download(name):
         for attempt in range(6):
             try:
