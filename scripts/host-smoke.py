@@ -4,6 +4,7 @@ ROOT=pathlib.Path(__file__).resolve().parent.parent
 source_manifest=json.loads((ROOT/'plugin.json').read_text())
 manifest=json.loads((ROOT/f'release/wasm/{source_manifest["id"]}/plugin.json').read_text())
 plugin_id=manifest['id']
+exec((ROOT/'scripts/upgrade-prepare.py').read_text(),globals())
 password=secrets.token_urlsafe(24)
 new_password=secrets.token_urlsafe(24)
 
@@ -19,7 +20,7 @@ for _ in range(50):
 env={'DATABASE_URL':'postgres://postgres:ci-only-password@paca-ci-db:5432/paca?sslmode=disable','REDIS_URL':'redis://paca-ci-cache:6379','JWT_SECRET':secrets.token_hex(32),'ADMIN_USERNAME':'admin','ADMIN_PASSWORD':password,'ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_URL':'http://localhost:18080','COOKIE_SECURE':'false','PLUGINS_WASM_DIR':'/plugins/wasm','PLUGINS_FRONTEND_DIR':'/plugins/frontend','STORAGE_PROVIDER':'s3','STORAGE_ENDPOINT':'http://paca-ci-storage:9000','STORAGE_ACCESS_KEY_ID':'ci-access-key','STORAGE_SECRET_ACCESS_KEY':'ci-secret-key','AI_AGENT_INTERNAL_KEY':secrets.token_hex(32),'STORAGE_BUCKET':'paca','STORAGE_REGION':'us-east-1'}
 args=['docker','run','-d','--name','paca-ci-api','--network','paca-ci','--network-alias','api','-p','127.0.0.1:18080:8080','-v',f'{ROOT}/release:/plugins']
 for k,v in env.items(): args+=['-e',f'{k}={v}']
-args+=['pacaai/paca-api:0.18.6']
+args+=['pacaai/paca-api@sha256:42b36fcb167f39bf07c04464b6d71ea49b1f7a8a745a2e9391623e76c5a17ad9']
 cmd(*args)
 jar=http.cookiejar.CookieJar()
 opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -40,10 +41,14 @@ for _ in range(90):
 else: raise RuntimeError('official API did not become ready')
 request('PATCH','/users/me/password',{'current_password':password,'new_password':new_password},204)
 request('POST','/auth/login',{'username':'admin','password':new_password})
-installed=request('POST','/admin/plugins',{'name':plugin_id,'version':manifest['version'],'manifest':manifest,'enabled':True},201)['data']
+installed=request('POST','/admin/plugins',{'name':plugin_id,'version':legacy_manifest['version'],'manifest':legacy_manifest,'enabled':True},201)['data']
+assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==2
+worker_secret=request('POST',f'/plugins/{plugin_id}/admin/worker-credential',{},201)['secret']
+request('PATCH',f'/admin/plugins/{installed['id']}',{'enabled':False})
+cmd('docker','cp',str(current_package)+ '/.',f'paca-ci-api:/plugins/wasm/{plugin_id}/')
+request('PATCH',f'/admin/plugins/{installed['id']}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
 health=request('GET',f'/plugins/{plugin_id}/health')
 assert health['schema_version']==3 and health['id']==plugin_id
-worker_secret=request('POST',f'/plugins/{plugin_id}/admin/worker-credential',{},201)['secret']
 stamp=str(int(time.time()))
 nonce=secrets.token_hex(24)
 signature=hmac.new(worker_secret.encode(),f'GET\n/worker/control\n{stamp}\n{nonce}'.encode(),hashlib.sha256).hexdigest()
@@ -68,7 +73,7 @@ exec((ROOT/'scripts/tasknotes-integration.py').read_text(),globals())
 verification=ROOT/'verification'
 verification.mkdir(parents=True,exist_ok=True)
 (ROOT/'ci.Caddyfile').write_text(':80 {\n handle /api/* {\n  reverse_proxy paca-ci-api:8080\n }\n handle_path /plugins/* {\n  root * /var/www/plugins\n  file_server\n }\n handle {\n  reverse_proxy paca-ci-web:3000\n }\n}\n')
-cmd('docker','run','-d','--name','paca-ci-web','--network','paca-ci','pacaai/paca-web:0.18.6')
+cmd('docker','run','-d','--name','paca-ci-web','--network','paca-ci','pacaai/paca-web@sha256:c65dc2fa6384be8bbafdda9a220d525d54c730f63f2a0e0b4c167c7bb9452995')
 cmd('docker','run','-d','--name','paca-ci-caddy','--network','paca-ci','-p','127.0.0.1:18081:80','-v',f'{ROOT}/ci.Caddyfile:/etc/caddy/Caddyfile:ro','-v',f'{ROOT}/release/frontend:/var/www/plugins:ro','caddy:2-alpine')
 for _ in range(40):
     try:
@@ -97,6 +102,6 @@ request('DELETE',f'/admin/plugins/{installed["id"]}',expected=204)
 request('GET',f'/plugins/{plugin_id}/health',expected=404)
 request('GET',f'/projects/{project["id"]}/tasks/{task["id"]}')
 report={'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'worker_hmac':True,'nonce_replay_rejected':True,'frontend_host':True,'task_crud':True,'disable_enable':True,'restart':True}
-report.update({'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
+report.update({'historical_package_upgrade':True,'upgrade_source':legacy_source,'worker_credential_preserved':True,'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
 (verification/'host-report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'task_crud':True,'disable_enable':True,'restart':True}))
