@@ -154,9 +154,9 @@ type source struct {
 	TaskID, Ref, State, Hash string
 	Version                  *time.Time
 	Tags                     []string
- Snapshot *tasknotes.Task
- EventAt *time.Time
- LastEvent string
+	Snapshot                 *tasknotes.Task
+	EventAt                  *time.Time
+	LastEvent                string
 }
 type task struct {
 	ID     string         `json:"id"`
@@ -225,11 +225,13 @@ func (w *Worker) Tick(ctx context.Context) error {
 		}
 		return err
 	}
- decision, message := eventDecision(s, e, time.Now())
- if decision != "apply" {
-  if decision == "duplicate" { return w.applied(ctx, id, s, e, s.State) }
-  return w.finish(ctx, id, decision, message)
- }
+	decision, message := eventDecision(s, e, time.Now())
+	if decision != "apply" {
+		if decision == "duplicate" {
+			return w.applied(ctx, id, s, e, s.State)
+		}
+		return w.finish(ctx, id, decision, message)
+	}
 	if s.State == "unassociated" && e.Event != "task.created" && e.Event != "task.deleted" {
 		return w.finish(ctx, id, "conflict", "unknown source path; verify rename or missed creation and associate manually")
 	}
@@ -365,20 +367,38 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 	if errors.Is(err, pgx.ErrNoRows) && e.Data.Previous != nil && e.Data.Previous.Path != path {
 		sid, err = sourceForPath(ctx, tx, c.ID, e.Data.Previous.Path)
 	}
- if errors.Is(err, pgx.ErrNoRows) && (e.Event == "task.archived" || e.Event == "task.unarchived" || e.Data.Previous != nil) {
-  candidate := e.Data.Task
-  if e.Data.Previous != nil { candidate = *e.Data.Previous }
-  rows, matchErr := tx.Query(ctx,"SELECT id,snapshot FROM sources WHERE connection_id=$1 AND state='linked' AND snapshot IS NOT NULL",c.ID)
-  if matchErr != nil { return source{},matchErr }
-  matches:=[]int64{}
-  for rows.Next() { var id int64; var raw []byte; var t tasknotes.Task; if rows.Scan(&id,&raw)==nil && json.Unmarshal(raw,&t)==nil && tasknotes.CanonicalHash(candidate,true)==tasknotes.CanonicalHash(t,true) { matches=append(matches,id) } }
-  rows.Close()
-  if rows.Err()!=nil { return source{},rows.Err() }
-  if len(matches)==1 { sid=matches[0]; err=nil }
-  if len(matches)>1 { return source{},associationConflict{"multiple full snapshots match the moved task; manual association required"} }
- }
- if errors.Is(err, pgx.ErrNoRows) {
-  b := make([]byte, 16)
+	if errors.Is(err, pgx.ErrNoRows) && (e.Event == "task.archived" || e.Event == "task.unarchived" || e.Data.Previous != nil) {
+		candidate := e.Data.Task
+		if e.Data.Previous != nil {
+			candidate = *e.Data.Previous
+		}
+		rows, matchErr := tx.Query(ctx, "SELECT id,snapshot FROM sources WHERE connection_id=$1 AND state='linked' AND snapshot IS NOT NULL", c.ID)
+		if matchErr != nil {
+			return source{}, matchErr
+		}
+		matches := []int64{}
+		for rows.Next() {
+			var id int64
+			var raw []byte
+			var t tasknotes.Task
+			if rows.Scan(&id, &raw) == nil && json.Unmarshal(raw, &t) == nil && tasknotes.CanonicalHash(candidate, true) == tasknotes.CanonicalHash(t, true) {
+				matches = append(matches, id)
+			}
+		}
+		rows.Close()
+		if rows.Err() != nil {
+			return source{}, rows.Err()
+		}
+		if len(matches) == 1 {
+			sid = matches[0]
+			err = nil
+		}
+		if len(matches) > 1 {
+			return source{}, associationConflict{"multiple full snapshots match the moved task; manual association required"}
+		}
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		b := make([]byte, 16)
 		if _, err = rand.Read(b); err != nil {
 			return source{}, err
 		}
@@ -389,38 +409,75 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 		}
 		err = tx.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,external_ref,state) VALUES($1,$2,$3,$4,$5) RETURNING id", c.ID, e.VaultKey(), path, ref, initialState).Scan(&sid)
 	}
- if err != nil { return source{},err }
- if e.Event == "task.created" {
-  var state string; var closed *time.Time
-  if err=tx.QueryRow(ctx,"SELECT state,event_at FROM sources WHERE id=$1",sid).Scan(&state,&closed);err!=nil { return source{},err }
-  if state=="deleted" && closed!=nil && e.Version().After(*closed) {
-   b:=make([]byte,16); if _,err=rand.Read(b);err!=nil { return source{},err }
-   var next int64
-   if err=tx.QueryRow(ctx,"INSERT INTO sources(connection_id,vault_key,source_key,external_ref,state,generation) SELECT $1,$2,$3,$4,'new',COALESCE(MAX(generation),0)+1 FROM sources WHERE connection_id=$1 AND vault_key=$2 AND source_key=$3 RETURNING id",c.ID,e.VaultKey(),path,"tasknotes:"+hex.EncodeToString(b)).Scan(&next);err!=nil { return source{},err }
-   if _,err=tx.Exec(ctx,"DELETE FROM path_aliases WHERE source_id=$1",sid);err!=nil { return source{},err }
-   sid=next
-  }
- }
- if _, err = tx.Exec(ctx, "INSERT INTO path_aliases(connection_id,vault_key,path,source_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING", c.ID, e.VaultKey(), path, sid); err != nil {
+	if err != nil {
+		return source{}, err
+	}
+	if e.Event == "task.created" {
+		var state string
+		var closed *time.Time
+		if err = tx.QueryRow(ctx, "SELECT state,event_at FROM sources WHERE id=$1", sid).Scan(&state, &closed); err != nil {
+			return source{}, err
+		}
+		if state == "deleted" && closed != nil && e.Version().After(*closed) {
+			b := make([]byte, 16)
+			if _, err = rand.Read(b); err != nil {
+				return source{}, err
+			}
+			var next int64
+			if err = tx.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,external_ref,state,generation) SELECT $1,$2,$3,$4,'new',COALESCE(MAX(generation),0)+1 FROM sources WHERE connection_id=$1 AND vault_key=$2 AND source_key=$3 RETURNING id", c.ID, e.VaultKey(), path, "tasknotes:"+hex.EncodeToString(b)).Scan(&next); err != nil {
+				return source{}, err
+			}
+			if _, err = tx.Exec(ctx, "DELETE FROM path_aliases WHERE source_id=$1", sid); err != nil {
+				return source{}, err
+			}
+			sid = next
+		}
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO path_aliases(connection_id,vault_key,path,source_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING", c.ID, e.VaultKey(), path, sid); err != nil {
 		return source{}, err
 	}
 	var s source
 	var tags, snapshot []byte
- err = tx.QueryRow(ctx, "SELECT id,COALESCE(paca_task_id::text,''),external_ref,state,version_at,snapshot_hash,source_tags,snapshot,event_at,last_event FROM sources WHERE id=$1", sid).Scan(&s.ID, &s.TaskID, &s.Ref, &s.State, &s.Version, &s.Hash, &tags, &snapshot, &s.EventAt, &s.LastEvent)
- if len(snapshot)>0 { var t tasknotes.Task; if json.Unmarshal(snapshot,&t)==nil { s.Snapshot=&t } }
- if err == nil && s.Snapshot == nil && s.Hash != "" {
-  rows, queryErr := tx.Query(ctx,"SELECT i.body FROM inbox i WHERE i.connection_id=$1 AND i.state='applied' AND i.body->'data'->'task'->>'path' IN (SELECT path FROM path_aliases WHERE source_id=$2) ORDER BY i.id DESC LIMIT 100",c.ID,sid)
-  if queryErr != nil { return s, queryErr }
-  var accepted *tasknotes.Envelope
-  for rows.Next() { var body []byte; if rows.Scan(&body)==nil { prior, decodeErr:=tasknotes.Decode(body); if decodeErr==nil && prior.LegacySnapshotHash()==s.Hash { accepted=&prior; break } } }
-  rows.Close()
-  if rows.Err()!=nil { return s, rows.Err() }
-  if accepted!=nil {
-   t:=accepted.EffectiveTask(); s.Snapshot=&t; stamp:=accepted.Version(); s.EventAt=&stamp; s.LastEvent=accepted.Event; s.Hash=accepted.SnapshotHash()
-   b,_:=json.Marshal(t)
-   if _,err=tx.Exec(ctx,"UPDATE sources SET snapshot=$1::jsonb,event_at=$2,task_modified_at=$3,last_event=$4,snapshot_hash=$5 WHERE id=$6",string(b),stamp,accepted.TaskModified(),accepted.Event,s.Hash,sid);err!=nil { return s,err }
-  }
- }
+	err = tx.QueryRow(ctx, "SELECT id,COALESCE(paca_task_id::text,''),external_ref,state,version_at,snapshot_hash,source_tags,snapshot,event_at,last_event FROM sources WHERE id=$1", sid).Scan(&s.ID, &s.TaskID, &s.Ref, &s.State, &s.Version, &s.Hash, &tags, &snapshot, &s.EventAt, &s.LastEvent)
+	if len(snapshot) > 0 {
+		var t tasknotes.Task
+		if json.Unmarshal(snapshot, &t) == nil {
+			s.Snapshot = &t
+		}
+	}
+	if err == nil && s.Snapshot == nil && s.Hash != "" {
+		rows, queryErr := tx.Query(ctx, "SELECT i.body FROM inbox i WHERE i.connection_id=$1 AND i.state='applied' AND i.body->'data'->'task'->>'path' IN (SELECT path FROM path_aliases WHERE source_id=$2) ORDER BY i.id DESC LIMIT 100", c.ID, sid)
+		if queryErr != nil {
+			return s, queryErr
+		}
+		var accepted *tasknotes.Envelope
+		for rows.Next() {
+			var body []byte
+			if rows.Scan(&body) == nil {
+				prior, decodeErr := tasknotes.Decode(body)
+				if decodeErr == nil && prior.LegacySnapshotHash() == s.Hash {
+					accepted = &prior
+					break
+				}
+			}
+		}
+		rows.Close()
+		if rows.Err() != nil {
+			return s, rows.Err()
+		}
+		if accepted != nil {
+			t := accepted.EffectiveTask()
+			s.Snapshot = &t
+			stamp := accepted.Version()
+			s.EventAt = &stamp
+			s.LastEvent = accepted.Event
+			s.Hash = accepted.SnapshotHash()
+			b, _ := json.Marshal(t)
+			if _, err = tx.Exec(ctx, "UPDATE sources SET snapshot=$1::jsonb,event_at=$2,task_modified_at=$3,last_event=$4,snapshot_hash=$5 WHERE id=$6", string(b), stamp, accepted.TaskModified(), accepted.Event, s.Hash, sid); err != nil {
+				return s, err
+			}
+		}
+	}
 	if err != nil {
 		return s, err
 	}
@@ -510,10 +567,12 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 	}
 	metadata := map[string]any{"version": 2, "source": "tasknotes", "archived": t.Archived, "recurring": t.Recurring(), "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value, "start_core_date": startDay, "due_core_date": dueDay, "start_source": t.Scheduled, "due_source": t.Due}
 	custom := map[string]any{}
- for key,value := range current.Custom { custom[key]=value }
- custom["_integration_ref_v1"]=s.Ref
- custom["_integration_state_v1"]=metadata
- payload := map[string]any{"title": title, "start_date": startCore, "due_date": dueCore, "importance": priority, "tags": tags, "custom_fields": custom}
+	for key, value := range current.Custom {
+		custom[key] = value
+	}
+	custom["_integration_ref_v1"] = s.Ref
+	custom["_integration_state_v1"] = metadata
+	payload := map[string]any{"title": title, "start_date": startCore, "due_date": dueCore, "importance": priority, "tags": tags, "custom_fields": custom}
 	if t.Details != nil {
 		blocks := []any{}
 		for _, line := range strings.Split(*t.Details, "\n") {
@@ -531,11 +590,15 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 		return nil, err
 	}
 	mapped := c.Statuses[t.Status]
- if t.Archived {
-  mapped = c.Statuses["@archived"]
-  if mapped == "" { return nil, errors.New("configure @archived with this project's archive status UUID") }
- }
- if e.Event == "task.completed" && c.Statuses["@completed"] != "" { mapped = c.Statuses["@completed"] }
+	if t.Archived {
+		mapped = c.Statuses["@archived"]
+		if mapped == "" {
+			return nil, errors.New("configure @archived with this project's archive status UUID")
+		}
+	}
+	if e.Event == "task.completed" && c.Statuses["@completed"] != "" {
+		mapped = c.Statuses["@completed"]
+	}
 	completed := e.Event == "task.completed" || strings.EqualFold(t.Status, "done") || strings.EqualFold(t.Status, "completed")
 	category := "todo"
 	switch strings.ToLower(t.Status) {
@@ -579,7 +642,7 @@ func (w *Worker) applied(ctx context.Context, id int64, s source, e tasknotes.En
 	defer tx.Rollback(ctx)
 	tags, _ := json.Marshal(tasknotes.NormalizeTags(e.Data.Task.Tags))
 	snapshot, _ := json.Marshal(e.EffectiveTask())
- _, err = tx.Exec(ctx, "UPDATE sources SET state=$1,version_at=GREATEST(version_at,$2),snapshot_hash=$3,source_tags=$4::jsonb,event_at=GREATEST(event_at,$2),task_modified_at=$6,snapshot=$7::jsonb,last_event=$8,updated_at=NOW() WHERE id=$5", state, e.Version(), e.SnapshotHash(), string(tags), s.ID, e.TaskModified(), string(snapshot), e.Event)
+	_, err = tx.Exec(ctx, "UPDATE sources SET state=$1,version_at=GREATEST(version_at,$2),snapshot_hash=$3,source_tags=$4::jsonb,event_at=GREATEST(event_at,$2),task_modified_at=$6,snapshot=$7::jsonb,last_event=$8,updated_at=NOW() WHERE id=$5", state, e.Version(), e.SnapshotHash(), string(tags), s.ID, e.TaskModified(), string(snapshot), e.Event)
 	if err != nil {
 		return err
 	}

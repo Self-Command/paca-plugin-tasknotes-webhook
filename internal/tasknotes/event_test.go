@@ -66,12 +66,23 @@ func TestSQLDateDoesNotLoseInstantOrLocalCalendar(t *testing.T) {
 	}
 }
 
-func TestSnapshotIgnoresClockAndPathButKeepsManagedFields(t *testing.T){
- original:=Task{Path:"Tasks/one.md",ID:"old",Title:"one",Tags:[]string{"b","a"},DateModified:"old"}
- moved:=original;moved.Path="Archive/one.md";moved.ID="new";moved.DateModified="new";moved.Tags=[]string{"a","b"}
- if CanonicalHash(original,false)!=CanonicalHash(moved,false){t.Fatal("volatile fields changed snapshot")}
- moved.Priority="high"
- if CanonicalHash(original,false)==CanonicalHash(moved,false){t.Fatal("priority ignored")}
- e:=Envelope{Event:"task.unarchived"};e.Data.Task.Archived=true
- if e.EffectiveTask().Archived {t.Fatal("stale cached archived flag overrode unarchive")}
+func TestSnapshotIgnoresClockAndPathButKeepsManagedFields(t *testing.T) {
+	original := Task{Path: "Tasks/one.md", ID: "old", Title: "one", Tags: []string{"b", "a"}, DateModified: "old"}
+	moved := original
+	moved.Path = "Archive/one.md"
+	moved.ID = "new"
+	moved.DateModified = "new"
+	moved.Tags = []string{"a", "b"}
+	if CanonicalHash(original, false) != CanonicalHash(moved, false) {
+		t.Fatal("volatile fields changed snapshot")
+	}
+	moved.Priority = "high"
+	if CanonicalHash(original, false) == CanonicalHash(moved, false) {
+		t.Fatal("priority ignored")
+	}
+	e := Envelope{Event: "task.unarchived"}
+	e.Data.Task.Archived = true
+	if e.EffectiveTask().Archived {
+		t.Fatal("stale cached archived flag overrode unarchive")
+	}
 }

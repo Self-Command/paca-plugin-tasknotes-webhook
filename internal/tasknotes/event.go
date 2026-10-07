@@ -132,47 +132,67 @@ func Hash(raw []byte) string { h := sha256.Sum256(raw); return hex.EncodeToStrin
 // A paired connection identifies the vault. Its machine-specific absolute path
 // must not create a second task when the same vault moves to another computer.
 func (e Envelope) VaultKey() string { return "connection" }
+
 // Event time and task modification time are independent, neither is a global revision.
 func (e Envelope) Version() time.Time {
- t, _ := time.Parse(time.RFC3339Nano, e.Timestamp)
- return t
+	t, _ := time.Parse(time.RFC3339Nano, e.Timestamp)
+	return t
 }
 func (e Envelope) TaskModified() *time.Time {
- t, err := time.Parse(time.RFC3339Nano, e.Data.Task.DateModified)
- if err != nil { return nil }
- return &t
+	t, err := time.Parse(time.RFC3339Nano, e.Data.Task.DateModified)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
+
 // EffectiveTask gives explicit lifecycle events precedence over cached archived flags.
 func (e Envelope) EffectiveTask() Task {
- t := e.Data.Task
- if e.Event == "task.archived" { t.Archived = true }
- if e.Event == "task.unarchived" { t.Archived = false }
- return t
+	t := e.Data.Task
+	if e.Event == "task.archived" {
+		t.Archived = true
+	}
+	if e.Event == "task.unarchived" {
+		t.Archived = false
+	}
+	return t
 }
+
 // CanonicalHash excludes volatile timestamps and path-derived identity, never title alone.
 func CanonicalHash(t Task, ignoreArchived bool) string {
- t.ID = ""
- t.Path = ""
- t.DateModified = ""
- if !t.Recurring() { t.Recurrence=nil }
- t.Tags = NormalizeTags(t.Tags)
- sort.Strings(t.Tags)
- if ignoreArchived { t.Archived = false }
- b, _ := json.Marshal(t)
- return Hash(b)
+	t.ID = ""
+	t.Path = ""
+	t.DateModified = ""
+	if !t.Recurring() {
+		t.Recurrence = nil
+	}
+	t.Tags = NormalizeTags(t.Tags)
+	sort.Strings(t.Tags)
+	if ignoreArchived {
+		t.Archived = false
+	}
+	b, _ := json.Marshal(t)
+	return Hash(b)
 }
 func (e Envelope) SnapshotHash() string {
- kind := "live"
- if e.Event == "task.deleted" { kind = "deleted" }
- return Hash([]byte(kind+"\n"+CanonicalHash(e.EffectiveTask(), false)))
+	kind := "live"
+	if e.Event == "task.deleted" {
+		kind = "deleted"
+	}
+	return Hash([]byte(kind + "\n" + CanonicalHash(e.EffectiveTask(), false)))
 }
+
 // Used only to verify the old accepted inbox during a schema-3 upgrade.
 func (e Envelope) LegacySnapshotHash() string {
- kind := "live"
- if e.Event == "task.deleted" { kind = "deleted" }
- if e.Event == "task.archived" || e.Data.Task.Archived { kind = "archived" }
- b, _ := json.Marshal(e.Data.Task)
- return Hash(append([]byte(kind+"\n"), b...))
+	kind := "live"
+	if e.Event == "task.deleted" {
+		kind = "deleted"
+	}
+	if e.Event == "task.archived" || e.Data.Task.Archived {
+		kind = "archived"
+	}
+	b, _ := json.Marshal(e.Data.Task)
+	return Hash(append([]byte(kind+"\n"), b...))
 }
 
 type Date struct {
