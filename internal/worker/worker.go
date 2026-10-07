@@ -246,7 +246,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 	}
 	echo, echoErr := w.checkinEcho(ctx, c, s, e)
 	if echoErr != nil {
-		return fmt.Errorf("writeback confirmation temporarily unavailable: %w",echoErr)
+		return fmt.Errorf("writeback confirmation temporarily unavailable: %w", echoErr)
 	}
 	if echo {
 		return w.applied(ctx, id, s, e, s.State)

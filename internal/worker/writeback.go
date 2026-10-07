@@ -67,7 +67,7 @@ func (w *Worker) checkinEcho(ctx context.Context, c connection, s source, e task
 		return false, nil
 	}
 	fields, candidate := echoFields(s, e)
-	if !candidate || len(fields)==0 {
+	if !candidate || len(fields) == 0 {
 		return false, nil
 	}
 	t := e.EffectiveTask()
