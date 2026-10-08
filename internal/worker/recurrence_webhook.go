@@ -50,7 +50,7 @@ func (w *Worker) occurrenceSource(ctx context.Context, c connection, e *tasknote
 	parentID, err := w.resolveSeries(ctx, config, e.Data.Task.Parent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var deleted bool
-		_ = w.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM sync_objects WHERE id::text=$1 AND connection_id=$2 AND deleted)", e.Data.Task.Parent, c.ID).Scan(&deleted)
+		_ = w.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM sync_objects o WHERE connection_id=$2 AND deleted AND kind='series' AND (id::text=$1 OR path=$3 OR path_aliases ? $3 OR EXISTS(SELECT 1 FROM sources s JOIN path_aliases a ON a.source_id=s.id WHERE s.paca_task_id=o.paca_task_id AND s.connection_id=$2 AND a.path=$3)))", e.Data.Task.Parent, c.ID,parentPath(e.Data.Task.Parent)).Scan(&deleted)
 		if deleted {
 			return true, associationConflict{"循环母任务已删除，本期事件已停止。"}
 		}

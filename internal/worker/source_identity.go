@@ -67,9 +67,12 @@ func linkSource(ctx context.Context, tx pgx.Tx, connection, task, ref string, in
 			return 0, err
 		}
 	} else {
-		var existing string
-		if err = tx.QueryRow(ctx, "SELECT COALESCE(paca_task_id::text,'') FROM sources WHERE id=$1", id).Scan(&existing); err != nil {
+		var existing, state string
+		if err = tx.QueryRow(ctx, "SELECT COALESCE(paca_task_id::text,''),state FROM sources WHERE id=$1", id).Scan(&existing, &state); err != nil {
 			return 0, err
+		}
+		if state == "conflict" {
+			return 0, associationConflict{"该来源关联已隔离，请核对周期身份后再处理。"}
 		}
 		if existing != "" && existing != task {
 			return 0, associationConflict{"稳定来源标记对应不同任务，请核对关联。"}
