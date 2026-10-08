@@ -68,13 +68,13 @@ or a missed creation. Resolve same-timestamp differences in TaskNotes and save a
 reprocessing; the receiver never guesses a winner or merges tasks by title.
 Applied deliveries cannot be replayed. Reprocessing retains creation intent and tombstones.
 
-TaskNotes is the owner of title, dates, status, importance and source tags. Paca v0.18.6 stores its native dates as SQL DATE, so accurate source instants remain in `_integration_state_v1` version 2. The native field holds the calendar day in the configured timezone. The `start_core_date` / `due_core_date` metadata binds each accurate instant to that native day; changing the native day invalidates precision. Date-only source values are retained in metadata with null native dates, so no midnight reminder is inferred.
-Paca edits to these fields can
-be replaced by the next accepted TaskNotes event. No changes are sent back to Obsidian.
-Paca v0.18.6 has no task archive field: TaskNotes archive is recorded in `_integration_state_v1.archived`
-so a compatible scheduler can stop reminders. It does not delete the Paca task.
+With bidirectional synchronization disabled, the six-event webhook remains a TaskNotes-to-Paca integration. Enable the preview mode, review all existing tasks and state mappings, then confirm the baseline and enable bidirectional synchronization with the independent Obsidian companion. Paca tasks are exported without requiring check-in. Shared fields include title, Markdown details, precise/date-only times, status, priority, tags, archive and recurrence; unrelated fields and check-in media remain separate.
+
+Paca v0.18.6 stores native dates as SQL DATE. Exact instants live in versioned metadata and remain bound to the native calendar date. Date-only values never imply midnight reminders. Archive maps to the configured project status UUID and preserves the underlying TaskNotes state. Deletion uses durable tombstones; titles never identify a task.
+
+Disjoint field edits merge against an agreed snapshot. Same-field and deletion/modification conflicts require an explicit choice. Operation IDs, creation claims and verified receipts prevent response loss or multi-device retries from creating duplicate tasks. Direct Markdown field changes are accepted through official events; the official API cannot reliably distinguish them from UI edits. The companion captures locally emitted events while offline. It cannot recover an event that neither the companion nor the server ever received.
 Recurring parents are imported without direct reminders. Enable the project's single recurrence coordinator to materialize individual periods using the pinned official TaskNotes model. Each period has a stable series/date identity and its own reminder and check-in history.
-The official desktop sender does not maintain a durable offline journal; this plugin cannot recover events it never received.
+The server owns the single enabled recurrence coordinator. Recurrence uses the pinned official `@tasknotes/model` 0.3.0-rc.9; future generation continues while Obsidian is closed. Stop/skip/delete retain period tombstones and settled history. A stopped parent remains excluded from ordinary reminders. Add recurring completion and skip to the official sender subscriptions when enabling recurrence.
 
 ## Verification
 
@@ -97,3 +97,8 @@ See the `host-verification` artifact for actual results; a source commit alone i
 ## WASM 凭据与重载
 
 WASM 后端的随机编号、配对令牌、worker 凭据及 AES-GCM nonce 使用原生 PostgreSQL 的随机 UUID 组合获取新鲜随机数据，避免模块状态恢复后复用历史序列。无需额外数据库扩展；原密文格式保持兼容。原生 Go worker 保留操作系统随机源。Action 包含错误时拒绝生成凭据的检查，打卡插件另验收连续配对、撤销后重新配对、模块重载与宿主重启。
+
+
+## Bidirectional runtime and MCP
+
+Expose `/task-sync/v1/` through the existing HTTPS reverse proxy to worker port 8091; keep internal control routes private. Install `mcp/<plugin-id>` alongside WASM and frontend assets. The MCP entry uses the caller's key and project permissions to query or configure a recurrence; the worker API key is never exposed. Give the worker a read-only image and UID/GID `65532:65532`, preserving existing private credential file ownership. The image contains the locked Node 24 recurrence runtime. Check both architecture reports and the fixed A/C/D combination before deployment.

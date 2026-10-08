@@ -175,6 +175,7 @@ jobs:
           for arch in amd64 arm64; do
             child=$(echo "$manifest" | jq -er --arg arch "$arch" '.manifests[] | select(.platform.os=="linux" and .platform.architecture==$arch) | .digest')
             docker run --rm --platform "linux/$arch" "${image%@*}@$child" --version | jq --exit-status --arg sha "$GITHUB_SHA" '.source_sha == $sha'
+            docker run --rm --read-only --memory=256m --platform "linux/$arch" --entrypoint node "${image%@*}@$child" --input-type=module -e 'import {execute} from "/opt/recurrence/index.mjs"; if(process.getuid()!==65532)throw Error("worker identity changed"); const result=execute({task:{title:"fixture",scheduled:"2026-10-08T09:00",recurrence:"FREQ=DAILY;COUNT=1"},today:"2026-10-08",end:"2026-10-08",series_id:"fixture"}); if(result.periods.length!==1)throw Error("runtime model unavailable");'
           done
       - uses: actions/download-artifact@v4
         with:

@@ -14,7 +14,7 @@ WORKDIR /opt/recurrence
 COPY recurrence/package.json recurrence/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY recurrence/index.mjs ./
-USER node
+USER 65532:65532
 WORKDIR /
 COPY --from=build /worker /worker
 ENTRYPOINT ["/worker"]
