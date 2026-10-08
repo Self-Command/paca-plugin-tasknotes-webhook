@@ -32,6 +32,23 @@ try:
         assert extra['recurrence_parent']==series_id and extra['occurrence_date']==p['date']
         assert not period_core['custom_fields']['_integration_state_v1']['recurring']
         assert p['date'] in period_core['custom_fields']['_integration_state_v1']['start_source']
+    # The official materialization initially inherits its mother's managed marker.
+    # Series/date identity must take precedence before D rewrites the child's marker.
+    period_item=sync_item(first[0]['task_id'])
+    note={**period_item['snapshot'],'id':'Tasks/本期阅读.md','path':'Tasks/本期阅读.md','dateCreated':datetime.now(ZoneInfo('UTC')).isoformat(),'dateModified':datetime.now(ZoneInfo('UTC')).isoformat(),'details':'<!-- paca-sync-id:'+series_id+' -->\n<!-- paca-task-content:start -->\n'+period_item['snapshot']['details']+'\n<!-- paca-task-content:end -->'}
+    webhook={'event':'task.created','timestamp':datetime.now(ZoneInfo('UTC')).isoformat(),'vault':{'name':'Official recurring fixture','path':'/fixture'},'data':{'task':note}}
+    raw=json.dumps(webhook,ensure_ascii=False,separators=(',',':')).encode()
+    delivery='inherited-parent-marker-'+str(uuid.uuid4())
+    req=urllib.request.Request(base+'/plugins/'+plugin_id+'/receive/'+sync_connection_id,data=raw,method='POST',headers={'Content-Type':'application/json','X-TaskNotes-Event':'task.created','X-TaskNotes-Delivery-ID':delivery,'X-TaskNotes-Signature':hmac.new(sync_sender_secret.encode(),raw,hashlib.sha256).hexdigest()})
+    with urllib.request.urlopen(req,timeout=20) as response:assert response.status==202
+    for _ in range(120):
+        received=next(row for row in request('GET',sync_admin+'/deliveries')['items'] if row['delivery_id']==delivery)
+        if received['state']=='applied':break
+        assert received['state'] not in ('error','conflict','uncertain'),received
+        time.sleep(.5)
+    else:raise AssertionError('Materialized child remained unsynchronized')
+    matched=[row for row in request('GET',sync_admin+'/sources')['items'] if row.get('path',row.get('source_key'))==note['path']]
+    assert len(matched)==1 and matched[0]['task_id']==first[0]['task_id'],'Inherited marker rebound the child to its parent'
     # No Obsidian process is running while the server creates these future tasks.
     sync_process.terminate();sync_process.wait(timeout=10)
     sync_process=subprocess.Popen(['/tmp/tasknotes-worker'],env=sync_env,stdout=sync_log,stderr=sync_log)

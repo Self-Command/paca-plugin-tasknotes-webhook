@@ -5,7 +5,8 @@ sync_project=request('POST','/projects',{'name':'双向任务验证','task_id_pr
 sync_archive=request('POST',f'/projects/{sync_project["id"]}/task-statuses',{'name':'归档','category':'done','position':99},201)['data']
 sync_states=request('GET',f'/projects/{sync_project["id"]}/task-statuses')['data']['items']
 sync_mapping={'open':next(s['id'] for s in sync_states if s['category']=='todo'),'in-progress':next(s['id'] for s in sync_states if s['category']=='inprogress'),'done':next(s['id'] for s in sync_states if s['category']=='done' and s['id']!=sync_archive['id']),'@archived':sync_archive['id']}
-sync_connection=request('POST',f'/plugins/{plugin_id}/projects/{sync_project["id"]}/connections',{'name':'双向测试来源','secret':secrets.token_hex(32),'status_map':sync_mapping},201)
+sync_sender_secret=secrets.token_hex(32)
+sync_connection=request('POST',f'/plugins/{plugin_id}/projects/{sync_project["id"]}/connections',{'name':'双向测试来源','secret':sync_sender_secret,'status_map':sync_mapping},201)
 sync_connection_id=sync_connection['id']
 sync_admin=f'/plugins/{plugin_id}/projects/{sync_project["id"]}/connections/{sync_connection_id}'
 sync_token=request('POST',sync_admin+'/pairing',{},201)['token']

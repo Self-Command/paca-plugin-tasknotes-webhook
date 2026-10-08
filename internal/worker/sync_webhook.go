@@ -135,7 +135,7 @@ func (w *Worker) markerSource(ctx context.Context, c connection, e tasknotes.Env
 	if e.Data.Task.Details != nil {
 		m := regexp.MustCompile(`<!-- paca-sync-id:([a-fA-F0-9-]{36}) -->`).FindStringSubmatch(*e.Data.Task.Details)
 		if len(m) == 2 {
-			err = w.Pool.QueryRow(ctx, "SELECT COALESCE(paca_task_id::text,''),source_ref,binding_state FROM sync_objects WHERE id=$1 AND connection_id=$2 AND NOT deleted", m[1], c.ID).Scan(&task, &ref, &state)
+			err = w.Pool.QueryRow(ctx, "SELECT COALESCE(paca_task_id::text,''),source_ref,binding_state FROM sync_objects WHERE id=$1 AND connection_id=$2 AND NOT deleted AND ($3='' OR kind='occurrence')", m[1], c.ID, e.Data.Task.OccurrenceDate).Scan(&task, &ref, &state)
 		}
 	}
 	if task == "" && e.Data.Task.DateCreated != "" {
