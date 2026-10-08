@@ -374,7 +374,10 @@ func nativePatch(snapshot, changes tasksync.Snapshot, c syncConfig, current nati
 	meta["version"] = 2
 	meta["source"] = "task-sync"
 	zone, _ := meta["timezone"].(string)
- if zone==""{zone=c.Timezone};meta["timezone"] = zone
+	if zone == "" {
+		zone = c.Timezone
+	}
+	meta["timezone"] = zone
 	meta["archived"] = snapshot["archived"]
 	rule, recurring := snapshot["recurrence"].(string)
 	seriesParent := meta["series_parent"] == true || recurring && rule != ""

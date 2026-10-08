@@ -650,8 +650,14 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 		custom["_task_sync_v1"] = map[string]any{"recurrence_parent": t.Parent, "occurrence_date": t.OccurrenceDate}
 	}
 	custom["_integration_ref_v1"] = s.Ref
-	if old,ok:=current.Custom["_integration_state_v1"].(map[string]any);ok{for key,value:=range old{if _,owned:=metadata[key];!owned{metadata[key]=value}}}
- custom["_integration_state_v1"] = metadata
+	if old, ok := current.Custom["_integration_state_v1"].(map[string]any); ok {
+		for key, value := range old {
+			if _, owned := metadata[key]; !owned {
+				metadata[key] = value
+			}
+		}
+	}
+	custom["_integration_state_v1"] = metadata
 	payload := map[string]any{"title": title, "start_date": startCore, "due_date": dueCore, "importance": priority, "tags": tags, "custom_fields": custom}
 	if t.Details != nil {
 		blocks := []any{}
