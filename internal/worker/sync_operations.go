@@ -154,11 +154,11 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		date, _ := op.Changes["occurrence_date"].(string)
 		if syncUUID.MatchString(parent) && date != "" {
 			if ensureErr := w.ensureRequestedPeriod(ctx, c, parent, date); ensureErr != nil {
-				return w.syncOpRetry(ctx, id, ensureErr)
+				return w.waitForPeriod(ctx,id)
 			}
 			var periodID string
 			if lookupErr := w.Pool.QueryRow(ctx, "SELECT p.object_id::text FROM recurring_periods p JOIN recurring_series s ON s.object_id=p.series_id WHERE p.series_id=$1 AND p.occurrence_date=$2 AND s.connection_id=$3 AND p.state NOT IN('deleted','cancelled','skipped')", parent, date, c.ID).Scan(&periodID); lookupErr != nil {
-				return w.syncOpRetry(ctx, id, errors.New("正在等待对应周期建立。"))
+				return w.waitForPeriod(ctx,id)
 			}
 			if periodID != op.SyncID {
 				if _, err = w.Pool.Exec(ctx, "UPDATE sync_objects SET canonical_id=$2 WHERE id=$1", op.SyncID, periodID); err != nil {
@@ -175,8 +175,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 				if !ready {
 					// The canonical create must be able to pass this dependency, even
 					// when the first local note uses the same stable period ID.
-					_, err = w.Pool.Exec(ctx, "UPDATE sync_operations SET state='waiting_period',next_attempt=NOW()+INTERVAL '2 seconds',error='正在等待服务器确认本期任务。' WHERE id=$1", id)
-					return err
+					return w.waitForPeriod(ctx,id)
 				}
 				// A first local materialization is based on the official period,
 				// not an empty unrelated task. Concurrent Paca edits still conflict.
@@ -339,6 +338,11 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		return w.syncOpDone(ctx, id, "uncertain", map[string]any{}, "任务在写入期间发生变化，请核对。")
 	}
 	return w.syncOpDone(ctx, id, "applied", map[string]any{"sync_id": op.SyncID, "task_id": task}, "")
+}
+// A missing parent is a bounded dependency, not an infinite write retry.
+func (w *Worker) waitForPeriod(ctx context.Context,id int64) error {
+ _,err:=w.Pool.Exec(ctx,"UPDATE sync_operations SET state=CASE WHEN attempts>=9 OR created_at<=clock_timestamp()-INTERVAL '30 minutes' THEN 'conflict' ELSE 'waiting_period' END,attempts=attempts+1,next_attempt=NOW()+LEAST(300,POWER(2,LEAST(attempts+1,8)))*INTERVAL '1 second',error='待关联：正在等待循环母任务或本期任务，请确认关联后重处理。' WHERE id=$1",id)
+ return err
 }
 func (w *Worker) syncOpRetry(ctx context.Context, id int64, problem error) error {
 	_, err := w.Pool.Exec(ctx, "UPDATE sync_operations SET state=CASE WHEN state='sending' THEN state ELSE 'retry' END,attempts=attempts+1,error=$2,next_attempt=NOW()+LEAST(300,POWER(2,LEAST(attempts+1,8))) * INTERVAL '1 second' WHERE id=$1", id, stringError(problem))
