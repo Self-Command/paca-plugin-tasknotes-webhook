@@ -9,8 +9,22 @@ import (
 	"github.com/jackc/pgx/v5"
 	"regexp"
 	"strconv"
+ "sort"
 )
 
+func sharedTags(tags []string, c syncConfig) []string {
+	out := []string{}
+	for _, tag := range tasknotes.NormalizeTags(tags) {
+		if tag != c.TaskTag && tag != c.ArchiveTag { out = append(out, tag) }
+	}
+	sort.Strings(out)
+	return out
+}
+func sourceSnapshot(t tasknotes.Task, c syncConfig) tasksync.Snapshot {
+	out := snapshotTask(t)
+	out["tags"] = sharedTags(t.Tags, c)
+	return out
+}
 func snapshotTask(t tasknotes.Task) tasksync.Snapshot {
 	raw, _ := json.Marshal(t)
 	s := tasksync.Snapshot{}
@@ -59,7 +73,7 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 	if err != nil {
 		return true, err
 	}
-	incoming := snapshotTask(e.EffectiveTask())
+	incoming := sourceSnapshot(e.EffectiveTask(), config)
 	var remote tasksync.Snapshot
 	_ = json.Unmarshal(remoteRaw, &remote)
 	// Explicit receipts identify every server-origin write, not only check-in status.
@@ -92,10 +106,10 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 	}
 	base := tasksync.Snapshot{}
 	if s.Snapshot != nil {
-		base = snapshotTask(*s.Snapshot)
+		base = sourceSnapshot(*s.Snapshot, config)
 	}
 	if e.Data.Previous != nil {
-		base = snapshotTask(*e.Data.Previous)
+		base = sourceSnapshot(*e.Data.Previous, config)
 	}
 	changes := tasksync.Diff(base, incoming)
 	kind := "update"

@@ -2,9 +2,17 @@ package worker
 
 import (
 	"testing"
+	"reflect"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
 )
+func TestSystemTagsDoNotCauseCrossApplicationConflicts(t *testing.T) {
+	c := syncConfig{connection: connection{ArchiveTag: "已归档"}, TaskTag:"任务"}
+	s := sourceSnapshot(tasknotes.Task{Tags: []string{"#任务", "学习", "已归档", "学习"}},c)
+	if !reflect.DeepEqual(s["tags"], []string{"学习"}) { t.Fatalf("system tags leaked: %#v",s) }
+	if !reflect.DeepEqual(sharedTags(nil,c), []string{}) { t.Fatal("empty tags must serialize as an array") }
+}
 
 func TestArchivedSnapshotKeepsUnderlyingConfiguredStatus(t *testing.T) {
 	c := syncConfig{connection: connection{Statuses: map[string]string{"open": "todo", "done": "done", "@archived": "archive"}, Priorities: map[string]int{"normal": 35}}}

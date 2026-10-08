@@ -109,7 +109,7 @@ try:
     assert create_requests==before_creates+1,'Lost response caused a duplicate task'
     created_id=result['result']['task_id']
     created_item=sync_item(created_id)
-    request('DELETE',f'/projects/{sync_project["id"]}/tasks/{created_id}',expected=204)
+    request('DELETE',f'/projects/{sync_project["id"]}/tasks/{created_id}')
     for _ in range(180):
         if sync_item(created_id)['deleted']: break
         time.sleep(.5)

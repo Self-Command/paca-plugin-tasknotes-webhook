@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	plugin "github.com/Paca-AI/plugin-sdk-go"
 )
 
@@ -15,6 +16,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 		Vault    string            `json:"vault_id"`
 		Revision int               `json:"revision"`
 		Reverse  map[string]string `json:"reverse_status_map"`
+		TaskTag  *string           `json:"task_tag"`
 	}](req)
 	if err != nil || (body.Mode != "off" && body.Mode != "preview" && body.Mode != "enabled") || len(body.Vault) > 128 || body.Revision < 1 {
 		res.Error(400, "请检查同步模式、笔记库和设置版本。")
@@ -25,6 +27,10 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 			res.Error(400, "请检查状态映射。")
 			return
 		}
+	}
+	if body.TaskTag != nil && (*body.TaskTag == "" || len(*body.TaskTag) > 128 || strings.TrimSpace(*body.TaskTag) != *body.TaskTag) {
+		res.Error(400, "请填写 TaskNotes 使用的任务标签。")
+		return
 	}
 	raw, _ := json.Marshal(body.Reverse)
 	if body.Reverse == nil {
@@ -37,7 +43,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 			return
 		}
 	}
-	changed, err := p.db.Exec("UPDATE connections SET sync_mode=$1,vault_id=COALESCE(NULLIF($2,''),vault_id),reverse_status_map=$3::jsonb,revision=revision+1 WHERE project_id=$4 AND id=$5 AND revision=$6", body.Mode, body.Vault, string(raw), req.PathParam("projectId"), req.PathParam("id"), body.Revision)
+	changed, err := p.db.Exec("UPDATE connections SET sync_mode=$1,vault_id=COALESCE(NULLIF($2,''),vault_id),reverse_status_map=$3::jsonb,task_tag=COALESCE($7,task_tag),revision=revision+1 WHERE project_id=$4 AND id=$5 AND revision=$6", body.Mode, body.Vault, string(raw), req.PathParam("projectId"), req.PathParam("id"), body.Revision, body.TaskTag)
 	if err != nil {
 		res.Error(503, "同步设置暂时无法保存。")
 		return

@@ -18,6 +18,7 @@ type syncConfig struct {
 	connection
 	Mode    string
 	Reverse map[string]string
+	TaskTag string
 }
 type nativeTask struct {
 	ID          string          `json:"id"`
@@ -34,7 +35,7 @@ type nativeTask struct {
 func (w *Worker) syncConfig(ctx context.Context, id string) (syncConfig, error) {
 	c := syncConfig{connection: connection{ID: id}}
 	var sm, pm, reverse []byte
-	err := w.Pool.QueryRow(ctx, "SELECT project_id::text,timezone,status_map,priority_map,revision,archive_tag,sync_mode,reverse_status_map FROM connections WHERE id=$1 AND enabled", id).Scan(&c.Project, &c.Timezone, &sm, &pm, &c.Revision, &c.ArchiveTag, &c.Mode, &reverse)
+	err := w.Pool.QueryRow(ctx, "SELECT project_id::text,timezone,status_map,priority_map,revision,archive_tag,sync_mode,reverse_status_map,task_tag FROM connections WHERE id=$1 AND enabled", id).Scan(&c.Project, &c.Timezone, &sm, &pm, &c.Revision, &c.ArchiveTag, &c.Mode, &reverse, &c.TaskTag)
 	if err != nil {
 		return c, err
 	}
@@ -53,10 +54,7 @@ func datePart(value *string) string {
 	return ""
 }
 func nativeSnapshot(t nativeTask, c syncConfig, previous tasksync.Snapshot) (tasksync.Snapshot, []string) {
-	tags := t.Tags
-	if tags == nil {
-		tags = []string{}
-	}
+	tags := sharedTags(t.Tags, c)
 	out := tasksync.Snapshot{"title": t.Title, "tags": tags, "archived": false, "recurrence": nil}
 	warnings := []string{}
 	if text, err := tasksync.Markdown(t.Description); err == nil {

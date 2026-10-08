@@ -385,9 +385,20 @@ func (w *Worker) syncPrepareReceipt(out http.ResponseWriter, r *http.Request) {
 	id := tasksync.ID(a.Connection, "receipt:"+body.OpID)
 	raw, _ := json.Marshal(body.Expected)
 	fieldsRaw, _ := json.Marshal(body.Fields)
-	_, err = w.Pool.Exec(r.Context(), "INSERT INTO sync_receipts(id,connection_id,object_id,op_id,revision,expected,fields) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT(connection_id,op_id) DO NOTHING", id, a.Connection, body.SyncID, body.OpID, revision, string(raw), string(fieldsRaw))
+	var savedObject string
+	var savedRevision int64
+	var savedExpected, savedFields []byte
+	err = w.Pool.QueryRow(r.Context(), "INSERT INTO sync_receipts(id,connection_id,object_id,op_id,revision,expected,fields) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT(connection_id,op_id) DO UPDATE SET op_id=EXCLUDED.op_id RETURNING object_id::text,revision,expected,fields", id, a.Connection, body.SyncID, body.OpID, revision, string(raw), string(fieldsRaw)).Scan(&savedObject,&savedRevision,&savedExpected,&savedFields)
 	if err != nil {
 		syncFail(out, 503, "回执暂时无法登记。")
+		return
+	}
+	var priorExpected tasksync.Snapshot
+	var priorFields []string
+	_ = json.Unmarshal(savedExpected,&priorExpected)
+	_ = json.Unmarshal(savedFields,&priorFields)
+	if savedObject != body.SyncID || savedRevision != revision || len(tasksync.Diff(priorExpected,body.Expected)) != 0 || tasksync.Hash(priorFields) != tasksync.Hash(body.Fields) {
+		syncFail(out,409,"同一回执标识不能用于不同操作。")
 		return
 	}
 	syncJSON(out, 201, map[string]any{"id": id})

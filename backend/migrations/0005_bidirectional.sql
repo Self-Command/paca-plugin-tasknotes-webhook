@@ -3,6 +3,7 @@ ALTER TABLE connections ADD COLUMN sync_mode TEXT NOT NULL DEFAULT 'off' CHECK(s
 ALTER TABLE connections ADD COLUMN reverse_status_map JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE connections ADD COLUMN reverse_priority_map JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE connections ADD COLUMN vault_id TEXT;
+ALTER TABLE connections ADD COLUMN task_tag TEXT NOT NULL DEFAULT 'task';
 CREATE TABLE sync_objects (
  id UUID PRIMARY KEY,connection_id UUID NOT NULL REFERENCES connections(id),paca_task_id UUID,
  source_id BIGINT REFERENCES sources(id),kind TEXT NOT NULL DEFAULT 'task' CHECK(kind IN('task','series','occurrence')),

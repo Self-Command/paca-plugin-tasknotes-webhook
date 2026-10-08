@@ -76,7 +76,7 @@ func (p *integrationPlugin) audit(req *plugin.Request, action, subject string) {
 	_, _ = p.db.Exec("INSERT INTO audit_log(project_id,actor_id,action,subject) VALUES($1,$2,$3,$4)", req.PathParam("projectId"), req.Caller.UserID, action, subject)
 }
 func (p *integrationPlugin) connections(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT id::text,name,enabled,timezone,status_map::text,priority_map::text,revision,archive_tag,sync_mode,reverse_status_map::text FROM connections WHERE project_id=$1 ORDER BY created_at", req.PathParam("projectId"))
+	rows, err := p.db.Query("SELECT id::text,name,enabled,timezone,status_map::text,priority_map::text,revision,archive_tag,sync_mode,reverse_status_map::text,task_tag FROM connections WHERE project_id=$1 ORDER BY created_at", req.PathParam("projectId"))
 	if err != nil {
 		res.Error(503, "connections unavailable")
 		return
@@ -87,7 +87,7 @@ func (p *integrationPlugin) connections(req *plugin.Request, res *plugin.Respons
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[4])), &statuses)
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[5])), &priorities)
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[9])), &reverse)
-		items = append(items, map[string]any{"id": r[0], "name": r[1], "enabled": r[2], "timezone": r[3], "status_map": statuses, "priority_map": priorities, "revision": r[6], "archive_tag": r[7], "sync_mode": r[8], "reverse_status_map": reverse})
+		items = append(items, map[string]any{"id": r[0], "name": r[1], "enabled": r[2], "timezone": r[3], "status_map": statuses, "priority_map": priorities, "revision": r[6], "archive_tag": r[7], "sync_mode": r[8], "reverse_status_map": reverse, "task_tag": r[10]})
 	}
 	res.JSON(200, map[string]any{"items": items})
 }
