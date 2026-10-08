@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateRecurringInstances} from '@tasknotes/model/recurrence';
-import {buildMaterializeOccurrencePlan,buildMaterializedOccurrenceCompletePlan} from '@tasknotes/model/operations';
+import {buildMaterializeOccurrencePlan,buildMaterializedOccurrenceCompletePlan,buildMaterializedOccurrenceUncompletePlan} from '@tasknotes/model/operations';
 import {execute} from './index.mjs';
 const base={title:'每日阅读',path:'Tasks/阅读.md',scheduled:'2026-10-08T09:00',due:'2026-10-08T10:00',recurrence:'FREQ=DAILY',recurrence_anchor:'scheduled',status:'open',priority:'high',tags:['学习']};
 const args={today:'2026-10-08',end:'2026-11-07',now:'2026-10-08T00:00:00Z',series_id:'stable-series',task:base};
@@ -30,4 +30,11 @@ test('completed/skipped periods, date-only time precision and invalid rules',()=
   const result=execute({...args,task:{...base,scheduled:'2026-10-08',due:undefined,complete_instances:['2026-10-08'],skipped_instances:['2026-10-09']}});
   assert.equal(result.periods[0].date,'2026-10-10');assert.equal(result.periods[0].snapshot.scheduled,'2026-10-10');
   for(const rule of ['FREQ=HOURLY','FREQ=DAILY;INTERVAL=0','FREQ=DAILY;BAD=1','FREQ=DAILY;BYHOUR=9,10'])assert.throws(()=>execute({...args,task:{...base,recurrence:rule}}));
+});
+test('reopening a period removes completion using the official uncomplete plan',()=>{
+  const task={...base,complete_instances:[args.today]};
+  const result=execute({...args,task,mode:'progress',date:args.today,undo:true,active_status:'open'});
+  const occurrence=buildMaterializeOccurrencePlan({parentTask:task,targetDate:args.today,currentTimestamp:args.now,parentLink:'[[series]]'}).occurrenceTask;
+  const expected=buildMaterializedOccurrenceUncompletePlan({parentTask:task,occurrenceTask:occurrence,targetDate:args.today,currentTimestamp:args.now,activeStatus:'open'});
+  assert.deepEqual(result.updates,expected.parentUpdates);assert(!result.updates.complete_instances.includes(args.today));
 });

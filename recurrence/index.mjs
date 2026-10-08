@@ -1,5 +1,5 @@
 import {generateRecurringInstances, getNextUncompletedOccurrence} from '@tasknotes/model/recurrence';
-import {buildMaterializeOccurrencePlan, buildMaterializedOccurrenceCompletePlan, buildMaterializedOccurrenceSkipPlan} from '@tasknotes/model/operations';
+import {buildMaterializeOccurrencePlan, buildMaterializedOccurrenceCompletePlan, buildMaterializedOccurrenceSkipPlan, buildMaterializedOccurrenceUncompletePlan} from '@tasknotes/model/operations';
 import rrule from 'rrule';
 import {pathToFileURL} from 'node:url';
 
@@ -30,8 +30,8 @@ export function execute(input) {
   if (input.mode === 'progress') {
     const date = day(input.date);
     const occurrence = buildMaterializeOccurrencePlan({parentTask: task, targetDate: date, currentTimestamp: now, parentLink: '[[series]]'}).occurrenceTask;
-    const args = {parentTask: task, occurrenceTask: occurrence, targetDate: date, currentTimestamp: now, completionDate: input.completion_date || today, completedStatus: input.done_status || 'done', maintainDueDateOffsetInRecurring: true};
-    const result = input.skipped ? buildMaterializedOccurrenceSkipPlan(args) : buildMaterializedOccurrenceCompletePlan(args);
+    const args = {parentTask: task, occurrenceTask: occurrence, targetDate: date, currentTimestamp: now, completionDate: input.completion_date || today, completedStatus: input.done_status || 'done', activeStatus: input.active_status || 'open', maintainDueDateOffsetInRecurring: true};
+    const result = input.undo ? buildMaterializedOccurrenceUncompletePlan(args) : input.skipped ? buildMaterializedOccurrenceSkipPlan(args) : buildMaterializedOccurrenceCompletePlan(args);
     return {version: '0.3.0-rc.9', updates: result.parentUpdates};
   }
   const end = day(input.end);

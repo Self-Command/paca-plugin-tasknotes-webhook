@@ -25,4 +25,5 @@ CREATE TABLE recurring_periods (
  PRIMARY KEY(series_id,occurrence_date)
 );
 CREATE INDEX recurring_periods_state ON recurring_periods(series_id,state);
+ALTER TABLE sync_operations ADD COLUMN request_hash TEXT NOT NULL DEFAULT '';
 UPDATE plugin_metadata SET version=6 WHERE id=1;

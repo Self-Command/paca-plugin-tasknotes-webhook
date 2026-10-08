@@ -27,11 +27,11 @@ try:
     first=periods(3)
     assert len({p['task_id'] for p in first})==3
     for p in first:
-        task=request('GET',f'/projects/{sync_project["id"]}/tasks/{p["task_id"]}')['data']
-        extra=task['custom_fields']['_task_sync_v1']
+        period_core=request('GET',f'/projects/{sync_project["id"]}/tasks/{p["task_id"]}')['data']
+        extra=period_core['custom_fields']['_task_sync_v1']
         assert extra['recurrence_parent']==series_id and extra['occurrence_date']==p['date']
-        assert not task['custom_fields']['_integration_state_v1']['recurring']
-        assert p['date'] in task['custom_fields']['_integration_state_v1']['start_source']
+        assert not period_core['custom_fields']['_integration_state_v1']['recurring']
+        assert p['date'] in period_core['custom_fields']['_integration_state_v1']['start_source']
     # No Obsidian process is running while the server creates these future tasks.
     sync_process.terminate();sync_process.wait(timeout=10)
     sync_process=subprocess.Popen(['/tmp/tasknotes-worker'],env=sync_env,stdout=sync_log,stderr=sync_log)
@@ -47,6 +47,19 @@ try:
         if first[0]['date'] in (parent['snapshot'].get('complete_instances') or []):break
         time.sleep(.5)
     else:raise AssertionError('Server completion did not update parent history')
+    # Reopening a completed period must remove only that date from the parent history.
+    request('PATCH',f'/projects/{sync_project["id"]}/tasks/{first[0]["task_id"]}',{'status_id':sync_mapping['open']})
+    for _ in range(180):
+        reopened=sync_item(series_task)
+        if first[0]['date'] not in (reopened['snapshot'].get('complete_instances') or []):break
+        time.sleep(.5)
+    else:raise AssertionError('Reopened period retained parent completion')
+    request('PATCH',f'/projects/{sync_project["id"]}/tasks/{first[0]["task_id"]}',{'status_id':sync_mapping['done']})
+    for _ in range(180):
+        repeated=sync_item(series_task)
+        if first[0]['date'] in (repeated['snapshot'].get('complete_instances') or []):break
+        time.sleep(.5)
+    else:raise AssertionError('A second completion reused a stale progress operation')
     request('DELETE',f'/projects/{sync_project["id"]}/tasks/{first[1]["task_id"]}')
     for _ in range(180):
         if next(p for p in periods(3) if p['date']==first[1]['date'])['state']=='deleted':break
@@ -56,13 +69,17 @@ try:
     parent_native=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'完成后再安排','status_id':sync_mapping['open']},201)['data']
     item=sync_item(parent_native['id'])
     route=f'/plugins/{plugin_id}/projects/{sync_project["id"]}/tasks/{parent_native["id"]}/recurrence'
-    request('PUT',route,{'connection_id':sync_connection_id,'revision':item['revision'],'op_id':str(uuid.uuid4()),'recurrence':'FREQ=DAILY','recurrence_anchor':'completion','scheduled':start+'T11:00:00','due':start+'T12:00:00'},202)
+    rule_request={'connection_id':sync_connection_id,'revision':item['revision'],'op_id':str(uuid.uuid4()),'recurrence':'FREQ=DAILY','recurrence_anchor':'completion','scheduled':start+'T11:00:00','due':start+'T12:00:00'}
+    request('PUT',route,rule_request,202)
     for _ in range(180):
         info=request('GET',route)['items'][0]
         if len(info['periods'])==1 and info['periods'][0]['task_id']:break
         time.sleep(.5)
     else:raise AssertionError(info)
     assert info['snapshot']['recurrence_anchor']=='completion'
-    (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'deleted_period_tombstone':True,'api_ai_rule_endpoint':True,'completion_anchor_one_pending':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
+    request('PUT',route,rule_request,202)
+    request('PUT',route,{**rule_request,'recurrence':'FREQ=WEEKLY'},409)
+    request('PUT',route,{**rule_request,'op_id':str(uuid.uuid4())},409)
+    (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'reopen_and_complete_again':True,'deleted_period_tombstone':True,'api_ai_rule_endpoint':True,'rule_request_idempotent':True,'stale_rule_revision_rejected':True,'completion_anchor_one_pending':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
 finally:
     pass

@@ -142,10 +142,12 @@ func (w *Worker) reconcileSeries(ctx context.Context, c syncConfig, id string, s
 	if err != nil {
 		return err
 	}
-	if advanced, progressErr := w.advanceCompletedPeriods(ctx, c, id, snapshot); progressErr != nil {
-		return progressErr
-	} else if advanced {
-		return nil
+	if state == "active" {
+		if advanced, progressErr := w.advanceCompletedPeriods(ctx, c, id, snapshot); progressErr != nil {
+			return progressErr
+		} else if advanced {
+			return nil
+		}
 	}
 	desired := map[string]tasksync.Snapshot{}
 	if state == "active" {

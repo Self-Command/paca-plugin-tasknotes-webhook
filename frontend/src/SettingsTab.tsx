@@ -8,7 +8,7 @@ type Connection={id:string;name:string;enabled:boolean;timezone:string;status_ma
 type Delivery={id:number;delivery_id:string;event:string;state:string;error:string;received_at:string};
 type Source={id:number;path:string;task_id:string;state:string};type Task={id:string;title:string;task_number:number};
 const states:Record<string,string>={pending:"待处理",applied:"已同步",active:"已关联",deleted:"已删除",archived:"已归档",stale:"旧事件已忽略",conflict:"待解决冲突",error:"处理失败",uncertain:"创建待核对",unassociated:"待关联"};
-const events:Record<string,string>={"task.created":"创建任务","task.updated":"更新任务","task.completed":"完成任务","task.deleted":"删除任务","task.archived":"归档任务","task.unarchived":"取消归档"};
+const events:Record<string,string>={"task.created":"创建任务","task.updated":"更新任务","task.completed":"完成任务","task.deleted":"删除任务","task.archived":"归档任务","task.unarchived":"取消归档","recurring.instance.completed":"完成本期","recurring.instance.skipped":"跳过本期"};
 const names:Record<string,string>={Todo:"待完成","In Progress":"进行中",Done:"已完成",Backlog:"待安排",Archive:"已归档"};
 const defaults:Record<string,string>={open:"待完成","in-progress":"进行中",done:"已完成","@completed":"完成事件","@archived":"归档事件"};
 async function response<T>(url:string,method="GET",body?:unknown):Promise<T>{const r=await fetch(url,{method,credentials:"include",headers:{"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw new Error(r.status===403?"没有操作权限，请联系项目管理员。":r.status===409?"设置或任务已发生变化，请刷新后重新核对。":r.status===400?"请检查连接、状态映射和时区设置。":"暂时无法连接，请稍后重试。");return r.json()}

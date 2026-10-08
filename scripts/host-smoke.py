@@ -60,6 +60,7 @@ request('GET',f'/plugins/{plugin_id}/worker/control',expected=401)
 project=request('POST','/projects',{'name':'Plugin baseline','task_id_prefix':'CI'},201)['data']
 request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/status')
 task=request('POST',f'/projects/{project["id"]}/tasks',{'title':'Official task preserved'},201)['data']
+preserved_core_task_id=task['id']
 request('PATCH',f'/projects/{project["id"]}/tasks/{task["id"]}',{'title':'Official update preserved'})
 request('PATCH',f'/admin/plugins/{installed["id"]}',{'enabled':False})
 request('GET',f'/plugins/{plugin_id}/health',expected=404)
@@ -123,7 +124,7 @@ verify_saved_secret(ui_secret)
 exec((ROOT/'scripts/task-sync-integration.py').read_text(),globals())
 request('DELETE',f'/admin/plugins/{installed["id"]}',expected=204)
 request('GET',f'/plugins/{plugin_id}/health',expected=404)
-request('GET',f'/projects/{project["id"]}/tasks/{task["id"]}')
+request('GET',f'/projects/{project["id"]}/tasks/{preserved_core_task_id}')
 report={'official_paca':'0.18.6','plugin':plugin_id,'migration':True,'wasm':True,'worker_hmac':True,'nonce_replay_rejected':True,'frontend_host':True,'task_crud':True,'disable_enable':True,'restart':True}
 report.update({'historical_package_upgrade':True,'upgrade_source':legacy_source,'worker_credential_preserved':True,'manifest_reload_preserves_business_data':True,'manifest_reload':True,'uninstall_preserves_core_tasks':True,'source_task_panel':True})
 report.update({'sender_secret_settings_ui':True,'secret_field_cleared_after_save':True,'sender_secret_survives_manifest_reload':True})

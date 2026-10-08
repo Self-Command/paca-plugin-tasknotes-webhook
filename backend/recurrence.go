@@ -44,12 +44,17 @@ func (p *integrationPlugin) setRecurrence(req *plugin.Request, res *plugin.Respo
 		res.Error(400, "请检查循环规则、开始时间和设置版本。")
 		return
 	}
+    inputHash:=tasksync.Hash(map[string]any{"request":body,"project":req.PathParam("projectId"),"task":req.PathParam("taskId")})
+    savedOp,lookupErr:=p.db.Query("SELECT o.request_hash,o.state,o.error FROM sync_operations o JOIN sync_objects t ON t.id=o.object_id JOIN connections c ON c.id=t.connection_id WHERE o.connection_id=$1 AND o.op_id=$2 AND c.project_id=$3 AND t.paca_task_id=$4",body.Connection,"paca-rule:"+body.OpID,req.PathParam("projectId"),req.PathParam("taskId"))
+    if lookupErr!=nil {res.Error(503,"循环设置暂时不可用。");return}
+    if len(savedOp.Rows)>0 {if fmt.Sprint(savedOp.Rows[0][0])!=inputHash {res.Error(409,"相同操作标识不能提交不同的循环设置。");return};res.JSON(202,map[string]any{"op_id":body.OpID,"state":savedOp.Rows[0][1],"error":savedOp.Rows[0][2]});return}
 	rows, err := p.db.Query("SELECT o.id::text,o.revision,o.snapshot::text FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2 AND o.paca_task_id=$3 AND c.enabled AND c.sync_mode='enabled' AND c.recurrence_enabled AND NOT o.deleted AND o.canonical_id IS NULL", body.Connection, req.PathParam("projectId"), req.PathParam("taskId"))
 	if err != nil || len(rows.Rows) != 1 {
 		res.Error(409, "请先启用此项目的双向同步和循环排期，并等待任务对账。")
 		return
 	}
 	row := rows.Rows[0]
+	if fmt.Sprint(row[1]) != fmt.Sprint(body.Revision) {res.Error(409,"任务版本已变化，请刷新循环规则后重试。");return}
 	var base tasksync.Snapshot
 	if json.Unmarshal([]byte(fmt.Sprint(row[2])), &base) != nil {
 		res.Error(503, "任务设置暂时不可用。")
@@ -63,14 +68,14 @@ func (p *integrationPlugin) setRecurrence(req *plugin.Request, res *plugin.Respo
 	if body.Due != nil {
 		changes["due"] = *body.Due
 	}
-	op := tasksync.Operation{OpID: body.OpID, SyncID: fmt.Sprint(row[0]), BaseRevision: body.Revision, Kind: "update", Base: base, Changes: changes}
+	op := tasksync.Operation{OpID: "paca-rule:"+body.OpID, SyncID: fmt.Sprint(row[0]), BaseRevision: body.Revision, Kind: "update", Base: base, Changes: changes}
 	raw, _ := json.Marshal(op)
-	saved, err := p.db.Query("INSERT INTO sync_operations(connection_id,object_id,device_id,op_id,body_hash,body) VALUES($1,$2,'paca-recurrence',$3,$4,$5::jsonb) ON CONFLICT(connection_id,op_id) DO UPDATE SET op_id=EXCLUDED.op_id RETURNING body_hash,state,error", body.Connection, row[0], body.OpID, tasksync.Hash(op), string(raw))
+	saved, err := p.db.Query("INSERT INTO sync_operations(connection_id,object_id,device_id,op_id,body_hash,body,request_hash) VALUES($1,$2,'paca-recurrence',$3,$4,$5::jsonb,$6) ON CONFLICT(connection_id,op_id) DO UPDATE SET op_id=EXCLUDED.op_id RETURNING request_hash,state,error", body.Connection, row[0], op.OpID, tasksync.Hash(op), string(raw),inputHash)
 	if err != nil || len(saved.Rows) != 1 {
 		res.Error(503, "循环设置暂时无法保存。")
 		return
 	}
-	if fmt.Sprint(saved.Rows[0][0]) != tasksync.Hash(op) {
+	if fmt.Sprint(saved.Rows[0][0]) != inputHash {
 		res.Error(409, "相同操作标识不能提交不同的循环设置。")
 		return
 	}

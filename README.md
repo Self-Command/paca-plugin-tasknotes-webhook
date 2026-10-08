@@ -73,7 +73,7 @@ Paca edits to these fields can
 be replaced by the next accepted TaskNotes event. No changes are sent back to Obsidian.
 Paca v0.18.6 has no task archive field: TaskNotes archive is recorded in `_integration_state_v1.archived`
 so a compatible scheduler can stop reminders. It does not delete the Paca task.
-Recurring tasks can be imported but are marked recurring and are not scheduled by this integration.
+Recurring parents are imported without direct reminders. Enable the project's single recurrence coordinator to materialize individual periods using the pinned official TaskNotes model. Each period has a stable series/date identity and its own reminder and check-in history.
 The official desktop sender does not maintain a durable offline journal; this plugin cannot recover events it never received.
 
 ## Verification

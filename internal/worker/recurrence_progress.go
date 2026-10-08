@@ -79,12 +79,12 @@ func (w *Worker) advanceCompletedPeriods(ctx context.Context, c syncConfig, seri
 			}
 		}
 	}
-	rows, err := w.Pool.Query(ctx, "SELECT p.object_id::text,p.occurrence_date::text,o.snapshot,o.paca_snapshot,o.revision FROM recurring_periods p JOIN sync_objects o ON o.id=p.object_id WHERE p.series_id=$1 AND p.state='planned' AND NOT o.deleted ORDER BY p.occurrence_date", series)
+	rows, err := w.Pool.Query(ctx, "SELECT p.object_id::text,p.occurrence_date::text,o.snapshot,o.paca_snapshot,o.revision,p.state FROM recurring_periods p JOIN sync_objects o ON o.id=p.object_id WHERE p.series_id=$1 AND p.state IN('planned','completed','skipped') AND NOT o.deleted ORDER BY p.occurrence_date", series)
 	if err != nil {
 		return false, err
 	}
 	type item struct {
-		id, date string
+		id, date, state string
 		revision int64
 		current  tasksync.Snapshot
 		native   nativeTask
@@ -93,7 +93,7 @@ func (w *Worker) advanceCompletedPeriods(ctx context.Context, c syncConfig, seri
 	for rows.Next() {
 		var p item
 		var current, native []byte
-		if err = rows.Scan(&p.id, &p.date, &current, &native, &p.revision); err != nil {
+		if err = rows.Scan(&p.id, &p.date, &current, &native, &p.revision, &p.state); err != nil {
 			rows.Close()
 			return false, err
 		}
@@ -107,6 +107,27 @@ func (w *Worker) advanceCompletedPeriods(ctx context.Context, c syncConfig, seri
 		return false, err
 	}
 	for _, p := range items {
+        var pending bool
+        if err = w.Pool.QueryRow(ctx,"SELECT EXISTS(SELECT 1 FROM sync_operations WHERE object_id=$1 AND state IN('pending','retry','sending','conflict','uncertain'))",p.id).Scan(&pending); err != nil {return false,err}
+        if pending {continue}
+        if p.state=="completed" && !completed[p.native.Status] && p.current["archived"]!=true {
+            if includesDate(parent["complete_instances"],p.date) {
+                loc,_:=time.LoadLocation(c.Timezone);now:=time.Now().In(loc)
+                result,modelErr:=recurrenceModel(ctx,c.Timezone,map[string]any{"mode":"progress","undo":true,"task":parent,"today":now.Format("2006-01-02"),"now":now.Format(time.RFC3339),"date":p.date,"active_status":p.current["status"]})
+                if modelErr!=nil{return false,modelErr}
+                var revision int64
+                if err=w.Pool.QueryRow(ctx,"SELECT revision FROM sync_objects WHERE id=$1",series).Scan(&revision);err!=nil{return false,err}
+                if err=w.queuePeriodOperation(ctx,c,series,revision,"update",parent,ruleFieldsOnly(result.Updates),fmt.Sprintf("undo:%s:%d",p.id,p.revision));err!=nil{return false,err}
+                return true,nil
+            }
+            if _,err=w.Pool.Exec(ctx,"UPDATE recurring_periods SET state='planned',updated_at=NOW() WHERE object_id=$1",p.id);err!=nil{return false,err}
+            continue
+        }
+        if p.state=="skipped"&&!includesDate(parent["skipped_instances"],p.date) {
+            if err=w.queuePeriodOperation(ctx,c,p.id,p.revision,"update",p.current,tasksync.Snapshot{"archived":false},fmt.Sprintf("unskip:%s:%d",p.id,p.revision));err!=nil{return false,err}
+            if _,err=w.Pool.Exec(ctx,"UPDATE recurring_periods SET state='planned',updated_at=NOW() WHERE object_id=$1",p.id);err!=nil{return false,err}
+            continue
+        }
 		skipped := includesDate(parent["skipped_instances"], p.date)
 		if includesDate(parent["complete_instances"], p.date) || skipped {
 			state := "completed"
@@ -147,7 +168,7 @@ func (w *Worker) advanceCompletedPeriods(ctx context.Context, c syncConfig, seri
 		if err = w.Pool.QueryRow(ctx, "SELECT revision FROM sync_objects WHERE id=$1", series).Scan(&revision); err != nil {
 			return false, err
 		}
-		if err = w.queuePeriodOperation(ctx, c, series, revision, "update", parent, updates, fmt.Sprintf("complete:%s", p.id)); err != nil {
+		if err = w.queuePeriodOperation(ctx, c, series, revision, "update", parent, updates, fmt.Sprintf("complete:%s:%d", p.id,p.revision)); err != nil {
 			return false, err
 		}
 		return true, nil

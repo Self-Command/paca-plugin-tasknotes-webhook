@@ -19,6 +19,6 @@ export default function TaskSourceSection({projectId,taskId}:{projectId:string;t
   <p className="text-sm text-muted-foreground">任务内容由 TaskNotes 单向同步到 Paca。打卡状态、记录和照片可通过 Obsidian 打卡同步插件拉取。</p>
   <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">开始</dt><dd>{display(source.start_instant,source.start_source,source.timezone)}</dd></div><div><dt className="text-muted-foreground">截止</dt><dd>{display(source.due_instant,source.due_source,source.timezone)}</dd></div></dl>
   {source.archived&&<p className="text-sm">来源已归档，本插件保留 Paca 任务。</p>}
-  {source.recurring&&<p className="text-sm">循环任务已导入；仅提醒当前任务，不自动安排后续循环。</p>}
+  {source.recurring&&<p className="text-sm">此任务为循环母任务。启用循环排期后，各期任务分别提醒；母任务不直接提醒。</p>}
  </CardContent></Card></section>;
 }
