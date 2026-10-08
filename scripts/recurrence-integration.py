@@ -139,7 +139,8 @@ try:
     assert next(p['task_id'] for p in migration['periods'] if p['date']==future_day)==old_period['id'],'Upgrade duplicated an existing occurrence'
     # A manually materialized historical note remains synchronizable without a historical batch.
     historical=(local.date()-timedelta(days=1)).isoformat()
-    historical_id=str(uuid.uuid4())
+    stable=bytearray(hashlib.sha256((migrated_series+'\n'+historical).encode()).digest()[:16]);stable[6]=(stable[6]&15)|80;stable[8]=(stable[8]&63)|128
+    historical_id=str(uuid.UUID(bytes=bytes(stable)))
     historical_op={'op_id':str(uuid.uuid4()),'sync_id':historical_id,'base_revision':0,'kind':'create','base':{},'changes':{'title':'历史周期笔记','status':'open','priority':'normal','recurrence_parent':migrated_series,'occurrence_date':historical}}
     sync_request('POST','/operations',historical_op,202)
     historical_result=wait_operation(historical_op)

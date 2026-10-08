@@ -96,14 +96,29 @@ func (w *Worker) adoptKnownPeriods(ctx context.Context, c syncConfig, series str
 		if item.deleted {
 			state = "deleted"
 		}
-		_, err = w.Pool.Exec(ctx, "INSERT INTO recurring_periods(series_id,occurrence_date,object_id,rule_revision,expected,state) VALUES($1,$2,$3,$4,$5::jsonb,$6) ON CONFLICT(series_id,occurrence_date) DO NOTHING", series, item.date, item.id, ruleRevision, string(raw), state)
-		if err != nil {
-			return err
+		tx, beginErr := w.Pool.Begin(ctx)
+		if beginErr != nil {
+			return beginErr
+		}
+		inserted, insertErr := tx.Exec(ctx, "INSERT INTO recurring_periods(series_id,occurrence_date,object_id,rule_revision,expected,state) VALUES($1,$2,$3,$4,$5::jsonb,$6) ON CONFLICT(series_id,occurrence_date) DO NOTHING", series, item.date, item.id, ruleRevision, string(raw), state)
+		if insertErr != nil {
+			tx.Rollback(ctx)
+			return insertErr
+		}
+		if inserted.RowsAffected() != 1 {
+			tx.Rollback(ctx)
+			return errors.New("周期关联已变化，请刷新后核对。")
 		}
 		if !item.deleted && item.snapshot["recurrence_parent"] != series {
-			if err = w.queuePeriodOperation(ctx, c, item.id, item.revision, "update", item.snapshot, tasksync.Snapshot{"recurrence_parent": series}, "adopt:"+item.id); err != nil {
+			op := tasksync.Operation{OpID: "series:adopt:" + item.id, SyncID: item.id, BaseRevision: item.revision, Kind: "update", Base: item.snapshot, Changes: tasksync.Snapshot{"recurrence_parent": series}}
+			body, _ := json.Marshal(op)
+			if _, err = tx.Exec(ctx, "INSERT INTO sync_operations(connection_id,object_id,device_id,op_id,body_hash,body) VALUES($1,$2,'recurrence',$3,$4,$5::jsonb) ON CONFLICT(connection_id,op_id) DO NOTHING", c.ID, item.id, op.OpID, tasksync.Hash(op), string(body)); err != nil {
+				tx.Rollback(ctx)
 				return err
 			}
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return err
 		}
 	}
 	return nil
