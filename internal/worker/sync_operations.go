@@ -112,7 +112,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	var id int64
 	var connectionID, state string
 	var raw []byte
-	err := w.Pool.QueryRow(ctx, "UPDATE sync_operations SET lease_until=NOW()+INTERVAL '90 seconds' WHERE id=(SELECT o.id FROM sync_operations o JOIN connections c ON c.id=o.connection_id WHERE c.enabled AND c.sync_mode='enabled' AND o.state IN('pending','retry','sending') AND o.next_attempt<=NOW() AND (o.lease_until IS NULL OR o.lease_until<NOW()) AND NOT EXISTS(SELECT 1 FROM sync_operations earlier WHERE earlier.object_id=o.object_id AND earlier.id<o.id AND earlier.state IN('pending','retry','sending','conflict','uncertain')) ORDER BY o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED) RETURNING id,connection_id::text,state,body").Scan(&id, &connectionID, &state, &raw)
+	err := w.Pool.QueryRow(ctx, "UPDATE sync_operations SET lease_until=NOW()+INTERVAL '90 seconds' WHERE id=(SELECT o.id FROM sync_operations o JOIN connections c ON c.id=o.connection_id WHERE c.enabled AND c.sync_mode='enabled' AND o.state IN('pending','retry','sending','waiting_period') AND o.next_attempt<=NOW() AND (o.lease_until IS NULL OR o.lease_until<NOW()) AND NOT EXISTS(SELECT 1 FROM sync_operations earlier WHERE earlier.object_id=o.object_id AND earlier.id<o.id AND earlier.state IN('pending','retry','sending','conflict','uncertain')) ORDER BY o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED) RETURNING id,connection_id::text,state,body").Scan(&id, &connectionID, &state, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -173,7 +173,10 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 					return err
 				}
 				if !ready {
-					return w.syncOpRetry(ctx, id, errors.New("正在等待服务器确认本期任务。"))
+					// The canonical create must be able to pass this dependency, even
+					// when the first local note uses the same stable period ID.
+					_, err = w.Pool.Exec(ctx, "UPDATE sync_operations SET state='waiting_period',next_attempt=NOW()+INTERVAL '2 seconds',error='正在等待服务器确认本期任务。' WHERE id=$1", id)
+					return err
 				}
 				// A first local materialization is based on the official period,
 				// not an empty unrelated task. Concurrent Paca edits still conflict.
