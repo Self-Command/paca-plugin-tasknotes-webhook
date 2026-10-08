@@ -7,9 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
- "github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
-	"github.com/jackc/pgx/v5"
 	"io"
 	"net/http"
 	"regexp"
@@ -313,9 +312,15 @@ func (w *Worker) syncBinding(out http.ResponseWriter, r *http.Request) {
 	snapshot["dateCreated"] = body.Created
 	raw, _ := json.Marshal(snapshot)
 	var incoming tasknotes.Task
-	if json.Unmarshal(raw,&incoming)!=nil {syncFail(out,409,"任务快照需要核对。");return}
-	sourceID,err:=linkSource(r.Context(),tx,a.Connection,task,ref,incoming)
-	if err!=nil {syncFail(out,409,"任务关联存在冲突，请核对。");return}
+	if json.Unmarshal(raw, &incoming) != nil {
+		syncFail(out, 409, "任务快照需要核对。")
+		return
+	}
+	sourceID, err := linkSource(r.Context(), tx, a.Connection, task, ref, incoming)
+	if err != nil {
+		syncFail(out, 409, "任务关联存在冲突，请核对。")
+		return
+	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), "UPDATE sync_objects SET path=$2,note_created=$3,binding_state='bound',source_id=$4,updated_at=NOW() WHERE id=$1", body.SyncID, body.Path, body.Created, sourceID)
 	}

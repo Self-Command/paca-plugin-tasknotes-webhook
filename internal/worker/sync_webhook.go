@@ -150,9 +150,13 @@ func (w *Worker) markerSource(ctx context.Context, c connection, e tasknotes.Env
 	if err != nil {
 		return false, err
 	}
-	tx,err:=w.Pool.Begin(ctx)
-	if err!=nil{return true,err}
+	tx, err := w.Pool.Begin(ctx)
+	if err != nil {
+		return true, err
+	}
 	defer tx.Rollback(ctx)
-	if _,err=linkSource(ctx,tx,c.ID,task,ref,e.Data.Task);err!=nil{return true,err}
-	return true,tx.Commit(ctx)
+	if _, err = linkSource(ctx, tx, c.ID, task, ref, e.Data.Task); err != nil {
+		return true, err
+	}
+	return true, tx.Commit(ctx)
 }

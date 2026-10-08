@@ -50,8 +50,10 @@ func (w *Worker) occurrenceSource(ctx context.Context, c connection, e *tasknote
 	parentID, err := w.resolveSeries(ctx, config, e.Data.Task.Parent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var deleted bool
-		_ = w.Pool.QueryRow(ctx,"SELECT EXISTS(SELECT 1 FROM sync_objects WHERE id::text=$1 AND connection_id=$2 AND deleted)",e.Data.Task.Parent,c.ID).Scan(&deleted)
-		if deleted { return true,associationConflict{"循环母任务已删除，本期事件已停止。"} }
+		_ = w.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM sync_objects WHERE id::text=$1 AND connection_id=$2 AND deleted)", e.Data.Task.Parent, c.ID).Scan(&deleted)
+		if deleted {
+			return true, associationConflict{"循环母任务已删除，本期事件已停止。"}
+		}
 		return true, associationPending{"正在等待循环母任务关联，已保留本期事件。"}
 	}
 	if err != nil {
@@ -68,16 +70,22 @@ func (w *Worker) occurrenceSource(ctx context.Context, c connection, e *tasknote
 	if err != nil {
 		return true, err
 	}
-	if marker:=noteMarker(e.Data.Task); marker!="" && marker!=objectID && marker!=parentID { return true,associationConflict{"周期日期与笔记同步标记不一致，已停止关联。"} }
+	if marker := noteMarker(e.Data.Task); marker != "" && marker != objectID && marker != parentID {
+		return true, associationConflict{"周期日期与笔记同步标记不一致，已停止关联。"}
+	}
 	e.Data.Task.Parent = parentID
 	if e.Data.Previous != nil {
 		e.Data.Previous.Parent = parentID
 	}
-	tx,err:=w.Pool.Begin(ctx)
-	if err!=nil{return true,err}
+	tx, err := w.Pool.Begin(ctx)
+	if err != nil {
+		return true, err
+	}
 	defer tx.Rollback(ctx)
-	if _,err=linkSource(ctx,tx,c.ID,taskID,ref,e.Data.Task);err!=nil{return true,err}
-	return true,tx.Commit(ctx)
+	if _, err = linkSource(ctx, tx, c.ID, taskID, ref, e.Data.Task); err != nil {
+		return true, err
+	}
+	return true, tx.Commit(ctx)
 }
 func ruleFieldsOnly(updates tasksync.Snapshot) tasksync.Snapshot {
 	out := tasksync.Snapshot{}

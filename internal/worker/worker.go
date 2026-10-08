@@ -241,9 +241,11 @@ func (w *Worker) tick(ctx context.Context) (result error) {
 		if result != nil {
 			state, message := "error", "任务处理暂未完成，将稍后重试。"
 			var pending associationPending
-			if errors.As(result,&pending) {
-				message=pending.Error()
-				if associationWaitExhausted(attempts,received,time.Now()) {state,message="conflict","待关联："+message+" 请关联母任务后手动重处理。"}
+			if errors.As(result, &pending) {
+				message = pending.Error()
+				if associationWaitExhausted(attempts, received, time.Now()) {
+					state, message = "conflict", "待关联："+message+" 请关联母任务后手动重处理。"
+				}
 			}
 			var conflict associationConflict
 			if errors.As(result, &conflict) {
