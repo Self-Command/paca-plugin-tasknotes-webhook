@@ -143,6 +143,9 @@ func (w *Worker) reconcileSeries(ctx context.Context, c syncConfig, id string, s
 		return err
 	}
 	if state == "active" {
+		if err = w.adoptKnownPeriods(ctx, c, id, ruleRevision); err != nil {
+			return err
+		}
 		if advanced, progressErr := w.advanceCompletedPeriods(ctx, c, id, snapshot); progressErr != nil {
 			return progressErr
 		} else if advanced {
@@ -252,31 +255,7 @@ func (w *Worker) reconcileSeries(ctx context.Context, c syncConfig, id string, s
 		}
 	}
 	for date, period := range desired {
-		periodID := tasksync.ID(id, date)
-		tx, err := w.Pool.Begin(ctx)
-		if err != nil {
-			return err
-		}
-		if _, err = tx.Exec(ctx, "INSERT INTO sync_objects(id,connection_id,source_ref,kind) VALUES($1,$2,$3,'occurrence') ON CONFLICT(id) DO NOTHING", periodID, c.ID, "period:"+id+":"+date); err != nil {
-			tx.Rollback(ctx)
-			return err
-		}
-		raw, _ := json.Marshal(period)
-		inserted, err := tx.Exec(ctx, "INSERT INTO recurring_periods(series_id,occurrence_date,object_id,rule_revision,expected) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(series_id,occurrence_date) DO NOTHING", id, date, periodID, ruleRevision, string(raw))
-		if err != nil {
-			tx.Rollback(ctx)
-			return err
-		}
-		if inserted.RowsAffected() == 1 {
-			op := tasksync.Operation{OpID: "period-create:" + periodID, SyncID: periodID, Kind: "create", Base: tasksync.Snapshot{}, Changes: period}
-			body, _ := json.Marshal(op)
-			_, err = tx.Exec(ctx, "INSERT INTO sync_operations(connection_id,object_id,device_id,op_id,body_hash,body) VALUES($1,$2,'recurrence',$3,$4,$5::jsonb) ON CONFLICT(connection_id,op_id) DO NOTHING", c.ID, periodID, op.OpID, tasksync.Hash(op), string(body))
-		}
-		if err != nil {
-			tx.Rollback(ctx)
-			return err
-		}
-		if err = tx.Commit(ctx); err != nil {
+		if err = w.insertPeriod(ctx, c, id, date, ruleRevision, period); err != nil {
 			return err
 		}
 	}

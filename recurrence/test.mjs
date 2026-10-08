@@ -38,3 +38,11 @@ test('reopening a period removes completion using the official uncomplete plan',
   const expected=buildMaterializedOccurrenceUncompletePlan({parentTask:task,occurrenceTask:occurrence,targetDate:args.today,currentTimestamp:args.now,activeStatus:'open'});
   assert.deepEqual(result.updates,expected.parentUpdates);assert(!result.updates.complete_instances.includes(args.today));
 });
+
+test('explicit official materialization keeps one requested historical date',()=>{
+  const result=execute({...args,mode:'materialize',date:'2026-10-07'});
+  assert.deepEqual(result.periods.map(p=>p.date),['2026-10-07']);
+  const expected=buildMaterializeOccurrencePlan({parentTask:base,targetDate:'2026-10-07',currentTimestamp:args.now,parentLink:args.series_id});
+  assert.deepEqual(result.periods[0].snapshot,expected.occurrenceTask);
+  assert.throws(()=>execute({...args,mode:'materialize',date:'2026-02-30'}));
+});

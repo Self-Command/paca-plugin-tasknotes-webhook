@@ -116,6 +116,39 @@ try:
     request('PUT',route,rule_request,202)
     request('PUT',route,{**rule_request,'recurrence':'FREQ=WEEKLY'},409)
     request('PUT',route,{**rule_request,'op_id':str(uuid.uuid4())},409)
-    (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'reopen_and_complete_again':True,'repeat_skip_unskip':True,'deleted_period_tombstone':True,'stopped_series_does_not_remind_parent':True,'api_ai_rule_endpoint':True,'rule_request_idempotent':True,'stale_rule_revision_rejected':True,'completion_anchor_one_pending':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
+    # Existing TaskNotes periods imported before enabling the scheduler keep their task IDs.
+    config_now=next(c for c in request('GET',f'/plugins/{plugin_id}/projects/{sync_project["id"]}/connections')['items'] if c['id']==sync_connection_id)
+    request('PUT',sync_admin+'/sync-config',{'mode':'enabled','revision':config_now['revision'],'recurrence_enabled':False})
+    migrated_series=str(uuid.uuid4())
+    future_day=(local.date()+timedelta(days=2)).isoformat()
+    migrate_op={'op_id':str(uuid.uuid4()),'sync_id':migrated_series,'base_revision':0,'kind':'create','base':{},'changes':{'title':'已有周期升级','status':'open','priority':'normal','scheduled':future_day+'T09:00:00','due':future_day+'T10:00:00','recurrence':'FREQ=DAILY;COUNT=2','recurrence_anchor':'scheduled'}}
+    sync_request('POST','/operations',migrate_op,202)
+    migrated_parent=wait_operation(migrate_op)['result']['task_id']
+    old_period=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'已有周期笔记','status_id':sync_mapping['open'],'custom_fields':{'_task_sync_v1':{'recurrence_parent':migrated_series,'occurrence_date':future_day}}},201)['data']
+    old_item=sync_item(old_period['id'])
+    assert old_item['kind']=='occurrence'
+    config_now=next(c for c in request('GET',f'/plugins/{plugin_id}/projects/{sync_project["id"]}/connections')['items'] if c['id']==sync_connection_id)
+    request('PUT',sync_admin+'/sync-config',{'mode':'enabled','revision':config_now['revision'],'recurrence_enabled':True})
+    migrate_route=f'/plugins/{plugin_id}/projects/{sync_project["id"]}/tasks/{migrated_parent}/recurrence'
+    for _ in range(360):
+        migration=request('GET',migrate_route)['items'][0]
+        assert not migration['error'],migration
+        if len(migration['periods'])==2 and all(p['task_id'] for p in migration['periods']):break
+        time.sleep(.5)
+    else:raise AssertionError(migration)
+    assert next(p['task_id'] for p in migration['periods'] if p['date']==future_day)==old_period['id'],'Upgrade duplicated an existing occurrence'
+    # A manually materialized historical note remains synchronizable without a historical batch.
+    historical=(local.date()-timedelta(days=1)).isoformat()
+    historical_id=str(uuid.uuid4())
+    historical_op={'op_id':str(uuid.uuid4()),'sync_id':historical_id,'base_revision':0,'kind':'create','base':{},'changes':{'title':'历史周期笔记','status':'open','priority':'normal','recurrence_parent':migrated_series,'occurrence_date':historical}}
+    sync_request('POST','/operations',historical_op,202)
+    historical_result=wait_operation(historical_op)
+    for _ in range(120):
+        historical_series=request('GET',migrate_route)['items'][0]
+        if any(p['date']==historical and p['task_id']==historical_result['result']['task_id'] for p in historical_series['periods']):break
+        time.sleep(.5)
+    else:raise AssertionError(historical_series)
+    assert len(historical_series['periods'])==3,'An explicit historical note backfilled extra periods'
+    (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'reopen_and_complete_again':True,'repeat_skip_unskip':True,'deleted_period_tombstone':True,'stopped_series_does_not_remind_parent':True,'api_ai_rule_endpoint':True,'rule_request_idempotent':True,'stale_rule_revision_rejected':True,'completion_anchor_one_pending':True,'existing_period_upgrade_preserved':True,'explicit_historical_period_no_batch':True,'inherited_parent_marker_ignored':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
 finally:
     pass

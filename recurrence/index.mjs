@@ -27,6 +27,11 @@ export function execute(input) {
   const task = parent(input.task);
   const today = day(input.today);
   const now = input.now || today+'T00:00:00Z';
+  if (input.mode === 'materialize') {
+    const date = day(input.date);
+    const plan = buildMaterializeOccurrencePlan({parentTask:task,targetDate:date,currentTimestamp:now,parentLink:input.series_id});
+    return {version:'0.3.0-rc.9',periods:[{date,snapshot:plan.occurrenceTask}]};
+  }
   if (input.mode === 'progress') {
     const date = day(input.date);
     const occurrence = buildMaterializeOccurrencePlan({parentTask: task, targetDate: date, currentTimestamp: now, parentLink: '[[series]]'}).occurrenceTask;

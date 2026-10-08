@@ -48,21 +48,14 @@ func (w *Worker) occurrenceSource(ctx context.Context, c connection, e *tasknote
 	if config.Mode != "enabled" || !config.Recurrence {
 		return false, nil
 	}
-	var parentID string
-	reference := e.Data.Task.Parent
-	if syncUUID.MatchString(reference) {
-		err = w.Pool.QueryRow(ctx, "SELECT id::text FROM sync_objects WHERE id=$1 AND connection_id=$2 AND kind='series' AND NOT deleted", reference, c.ID).Scan(&parentID)
-	} else {
-		path := parentPath(reference)
-		if path == "" {
-			return true, errors.New("循环母任务路径无效，请核对关联。")
-		}
-		err = w.Pool.QueryRow(ctx, "SELECT o.id::text FROM sync_objects o WHERE o.connection_id=$1 AND o.kind='series' AND NOT o.deleted AND (o.path=$2 OR o.path_aliases ? $2 OR EXISTS(SELECT 1 FROM sources s JOIN path_aliases a ON a.source_id=s.id WHERE s.paca_task_id=o.paca_task_id AND s.connection_id=$1 AND a.path=$2))", c.ID, path).Scan(&parentID)
-	}
+	parentID, err := w.resolveSeries(ctx, config, e.Data.Task.Parent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return true, errors.New("正在等待循环母任务关联，已保留本期事件。")
 	}
 	if err != nil {
+		return true, err
+	}
+	if err = w.ensureRequestedPeriod(ctx, config, parentID, e.Data.Task.OccurrenceDate); err != nil {
 		return true, err
 	}
 	var taskID, ref string

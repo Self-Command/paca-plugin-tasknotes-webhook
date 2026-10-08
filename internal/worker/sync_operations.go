@@ -153,6 +153,9 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		parent, _ := op.Changes["recurrence_parent"].(string)
 		date, _ := op.Changes["occurrence_date"].(string)
 		if syncUUID.MatchString(parent) && date != "" {
+			if ensureErr := w.ensureRequestedPeriod(ctx, c, parent, date); ensureErr != nil {
+				return w.syncOpRetry(ctx, id, ensureErr)
+			}
 			var periodID string
 			if lookupErr := w.Pool.QueryRow(ctx, "SELECT p.object_id::text FROM recurring_periods p JOIN recurring_series s ON s.object_id=p.series_id WHERE p.series_id=$1 AND p.occurrence_date=$2 AND s.connection_id=$3 AND p.state NOT IN('deleted','cancelled','skipped')", parent, date, c.ID).Scan(&periodID); lookupErr != nil {
 				return w.syncOpRetry(ctx, id, errors.New("正在等待对应周期建立。"))
