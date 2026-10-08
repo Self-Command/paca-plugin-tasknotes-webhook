@@ -224,7 +224,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	if task != "" {
 		err = w.call(ctx, "GET", root+"/"+task, nil, &current)
 		var api apiError
-		if err != nil && !(op.Kind == "delete" && errors.As(err, &api) && api.Code == 404) {
+		if err != nil && !((op.Kind == "delete" || deleted) && errors.As(err, &api) && api.Code == 404) {
 			return w.syncOpRetry(ctx, id, err)
 		}
 		if current.ID != "" {

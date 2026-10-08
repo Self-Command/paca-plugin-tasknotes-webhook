@@ -144,12 +144,11 @@ try:
     historical_op={'op_id':str(uuid.uuid4()),'sync_id':historical_id,'base_revision':0,'kind':'create','base':{},'changes':{'title':'历史周期笔记','status':'open','priority':'normal','recurrence_parent':migrated_series,'occurrence_date':historical}}
     sync_request('POST','/operations',historical_op,202)
     historical_result=wait_operation(historical_op)
-    for _ in range(120):
-        historical_series=request('GET',migrate_route)['items'][0]
-        if any(p['date']==historical and p['task_id']==historical_result['result']['task_id'] for p in historical_series['periods']):break
-        time.sleep(.5)
-    else:raise AssertionError(historical_series)
-    assert len(historical_series['periods'])==3,'An explicit historical note backfilled extra periods'
+    historical_item=sync_item(historical_result['result']['task_id'])
+    assert historical_item['snapshot']['occurrence_date']==historical
+    all_period_tasks=request('GET',f'/projects/{sync_project["id"]}/tasks?page_size=200')['data']['items']
+    matching=[task for task in all_period_tasks if task.get('custom_fields',{}).get('_task_sync_v1',{}).get('recurrence_parent')==migrated_series]
+    assert len(matching)==3,'An explicit historical note backfilled extra periods'
     (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'reopen_and_complete_again':True,'repeat_skip_unskip':True,'deleted_period_tombstone':True,'stopped_series_does_not_remind_parent':True,'api_ai_rule_endpoint':True,'rule_request_idempotent':True,'stale_rule_revision_rejected':True,'completion_anchor_one_pending':True,'existing_period_upgrade_preserved':True,'explicit_historical_period_no_batch':True,'inherited_parent_marker_ignored':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
 finally:
     pass

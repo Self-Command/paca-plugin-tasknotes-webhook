@@ -119,6 +119,18 @@ try:
     delete_op=submit(delete_item,{},'delete')
     wait_operation(delete_op)
     request('GET',f'/projects/{sync_project["id"]}/tasks/{native["id"]}',expected=404)
+    # A delayed edit of a deleted task must not starve unrelated signed deliveries.
+    late_task={**updated['snapshot'],'id':'Tasks/Paca.md','path':'Tasks/Paca.md','dateCreated':'2026-10-08T00:00:00Z','dateModified':datetime.datetime.now(datetime.timezone.utc).isoformat(),'details':'<!-- paca-sync-id:'+original['sync_id']+' -->\n延迟修改'}
+    late_body={'event':'task.updated','timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),'vault':{'name':'Late delivery fixture','path':'/fixture'},'data':{'task':late_task,'previous':late_task}}
+    late_raw=json.dumps(late_body,ensure_ascii=False,separators=(',',':')).encode()
+    late_delivery='deleted-late-edit-'+str(uuid.uuid4())
+    late_req=urllib.request.Request(base+'/plugins/'+plugin_id+'/receive/'+sync_connection_id,data=late_raw,method='POST',headers={'Content-Type':'application/json','X-TaskNotes-Event':'task.updated','X-TaskNotes-Delivery-ID':late_delivery,'X-TaskNotes-Signature':hmac.new(sync_sender_secret.encode(),late_raw,hashlib.sha256).hexdigest()})
+    with urllib.request.urlopen(late_req,timeout=20) as response:assert response.status==202
+    for _ in range(120):
+        late_row=next(row for row in request('GET',sync_admin+'/deliveries')['items'] if row['delivery_id']==late_delivery)
+        if late_row['state']=='conflict':break
+        time.sleep(.5)
+    else:raise AssertionError('A delayed deleted-task event remained in the active queue')
     # Durable changes remain across worker restart, and a revoked token cannot read them.
     cursor=sync_request('GET','/changes?after=0')['next_cursor']
     sync_process.terminate();sync_process.wait(timeout=10)

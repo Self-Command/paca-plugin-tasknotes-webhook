@@ -59,8 +59,11 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 	var native nativeTask
 	err = w.call(ctx, "GET", "/projects/"+c.Project+"/tasks/"+s.TaskID, nil, &native)
 	var api apiError
-	if errors.As(err, &api) && api.Code == 404 && e.Event == "task.deleted" {
-		return true, w.applied(ctx, inbox, s, e, "deleted")
+	if errors.As(err, &api) && api.Code == 404 {
+		if e.Event == "task.deleted" {
+			return true, w.applied(ctx, inbox, s, e, "deleted")
+		}
+		return true, w.finish(ctx, inbox, "conflict", "对应任务已不存在或当前不可访问，请核对后处理此变更。")
 	}
 	if err != nil {
 		return true, err

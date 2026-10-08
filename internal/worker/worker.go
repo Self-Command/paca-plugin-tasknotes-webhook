@@ -189,7 +189,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 	legacy.DB = acquired.Conn()
 	return legacy.tick(ctx)
 }
-func (w *Worker) tick(ctx context.Context) error {
+func (w *Worker) tick(ctx context.Context) (result error) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	if err := w.control(ctx); err != nil {
@@ -236,6 +236,14 @@ func (w *Worker) tick(ctx context.Context) error {
 	defer func() {
 		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer releaseCancel()
+		if result != nil {
+			state, message := "error", "任务处理暂未完成，将稍后重试。"
+			var conflict associationConflict
+			if errors.As(result, &conflict) {
+				state, message = "conflict", conflict.Error()
+			}
+			_ = w.finish(releaseCtx, id, state, message)
+		}
 		_, _ = w.DB.Exec(releaseCtx, "UPDATE inbox SET lease_owner=NULL,lease_until=NULL WHERE id=$1 AND lease_owner=$2", id, owner)
 	}()
 	e, err := tasknotes.Decode(raw)
