@@ -122,6 +122,7 @@ assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==6
 assert request('GET',reload_path)['items']==retained_sources,'Manifest reload changed source associations'
 verify_saved_secret(ui_secret)
 exec((ROOT/'scripts/task-sync-integration.py').read_text(),globals())
+subprocess.run(['go','test','./internal/worker','-run','TestSourceIdentityDatabase','-count=1','-v'],check=True,env={**os.environ,'PACA_IDENTITY_TEST_DB':'postgres://postgres:ci-only-password@127.0.0.1:15432/paca?sslmode=disable','PACA_IDENTITY_TEST_CONNECTION':sync_connection_id})
 request('DELETE',f'/admin/plugins/{installed["id"]}',expected=204)
 request('GET',f'/plugins/{plugin_id}/health',expected=404)
 request('GET',f'/projects/{project["id"]}/tasks/{preserved_core_task_id}')

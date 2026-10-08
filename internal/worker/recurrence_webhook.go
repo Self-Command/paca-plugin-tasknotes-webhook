@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
@@ -50,7 +49,10 @@ func (w *Worker) occurrenceSource(ctx context.Context, c connection, e *tasknote
 	}
 	parentID, err := w.resolveSeries(ctx, config, e.Data.Task.Parent)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return true, errors.New("正在等待循环母任务关联，已保留本期事件。")
+		var deleted bool
+		_ = w.Pool.QueryRow(ctx,"SELECT EXISTS(SELECT 1 FROM sync_objects WHERE id::text=$1 AND connection_id=$2 AND deleted)",e.Data.Task.Parent,c.ID).Scan(&deleted)
+		if deleted { return true,associationConflict{"循环母任务已删除，本期事件已停止。"} }
+		return true, associationPending{"正在等待循环母任务关联，已保留本期事件。"}
 	}
 	if err != nil {
 		return true, err
@@ -58,26 +60,24 @@ func (w *Worker) occurrenceSource(ctx context.Context, c connection, e *tasknote
 	if err = w.ensureRequestedPeriod(ctx, config, parentID, e.Data.Task.OccurrenceDate); err != nil {
 		return true, err
 	}
-	var taskID, ref string
-	err = w.Pool.QueryRow(ctx, "SELECT COALESCE(o.paca_task_id::text,''),o.source_ref FROM recurring_periods p JOIN sync_objects o ON o.id=p.object_id WHERE p.series_id=$1 AND p.occurrence_date=$2 AND p.state NOT IN('deleted','cancelled')", parentID, e.Data.Task.OccurrenceDate).Scan(&taskID, &ref)
+	var taskID, ref, objectID string
+	err = w.Pool.QueryRow(ctx, "SELECT COALESCE(o.paca_task_id::text,''),o.source_ref,o.id::text FROM recurring_periods p JOIN sync_objects o ON o.id=p.object_id WHERE p.series_id=$1 AND p.occurrence_date=$2 AND p.state NOT IN('deleted','cancelled')", parentID, e.Data.Task.OccurrenceDate).Scan(&taskID, &ref, &objectID)
 	if errors.Is(err, pgx.ErrNoRows) || taskID == "" {
-		return true, errors.New("正在等待服务器建立对应周期，已保留本期事件。")
+		return true, associationPending{"正在等待服务器建立对应周期，已保留本期事件。"}
 	}
 	if err != nil {
 		return true, err
 	}
+	if marker:=noteMarker(e.Data.Task); marker!="" && marker!=objectID && marker!=parentID { return true,associationConflict{"周期日期与笔记同步标记不一致，已停止关联。"} }
 	e.Data.Task.Parent = parentID
 	if e.Data.Previous != nil {
 		e.Data.Previous.Parent = parentID
 	}
-	raw, _ := json.Marshal(e.Data.Task)
-	var sourceID int64
-	err = w.Pool.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,paca_task_id,external_ref,state,snapshot) VALUES($1,$2,$3,$4,$5,'linked',$6::jsonb) ON CONFLICT(external_ref) DO UPDATE SET paca_task_id=EXCLUDED.paca_task_id RETURNING id", c.ID, e.Vault.Path, e.Data.Task.Path, taskID, ref, string(raw)).Scan(&sourceID)
-	if err != nil {
-		return true, err
-	}
-	_, err = w.Pool.Exec(ctx, "INSERT INTO path_aliases(connection_id,vault_key,path,source_id) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,vault_key,path) DO NOTHING", c.ID, e.Vault.Path, e.Data.Task.Path, sourceID)
-	return true, err
+	tx,err:=w.Pool.Begin(ctx)
+	if err!=nil{return true,err}
+	defer tx.Rollback(ctx)
+	if _,err=linkSource(ctx,tx,c.ID,taskID,ref,e.Data.Task);err!=nil{return true,err}
+	return true,tx.Commit(ctx)
 }
 func ruleFieldsOnly(updates tasksync.Snapshot) tasksync.Snapshot {
 	out := tasksync.Snapshot{}

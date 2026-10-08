@@ -150,12 +150,9 @@ func (w *Worker) markerSource(ctx context.Context, c connection, e tasknotes.Env
 	if err != nil {
 		return false, err
 	}
-	raw, _ := json.Marshal(e.Data.Task)
-	var id int64
-	err = w.Pool.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,paca_task_id,external_ref,state,snapshot) VALUES($1,$2,$3,$4,$5,'linked',$6::jsonb) ON CONFLICT(external_ref) DO UPDATE SET paca_task_id=EXCLUDED.paca_task_id RETURNING id", c.ID, e.Vault.Path, e.Data.Task.Path, task, ref, string(raw)).Scan(&id)
-	if err != nil {
-		return true, err
-	}
-	_, err = w.Pool.Exec(ctx, "INSERT INTO path_aliases(connection_id,vault_key,path,source_id) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,vault_key,path) DO NOTHING", c.ID, e.Vault.Path, e.Data.Task.Path, id)
-	return true, err
+	tx,err:=w.Pool.Begin(ctx)
+	if err!=nil{return true,err}
+	defer tx.Rollback(ctx)
+	if _,err=linkSource(ctx,tx,c.ID,task,ref,e.Data.Task);err!=nil{return true,err}
+	return true,tx.Commit(ctx)
 }

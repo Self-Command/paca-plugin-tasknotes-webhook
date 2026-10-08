@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
+ "github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"github.com/jackc/pgx/v5"
 	"io"
 	"net/http"
@@ -311,18 +312,10 @@ func (w *Worker) syncBinding(out http.ResponseWriter, r *http.Request) {
 	snapshot["path"] = body.Path
 	snapshot["dateCreated"] = body.Created
 	raw, _ := json.Marshal(snapshot)
-	var sourceID int64
-	err = tx.QueryRow(r.Context(), "SELECT id FROM sources WHERE connection_id=$1 AND paca_task_id=$2 AND state<>'superseded' ORDER BY id DESC LIMIT 1", a.Connection, task).Scan(&sourceID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = tx.QueryRow(r.Context(), "INSERT INTO sources(connection_id,vault_key,source_key,paca_task_id,external_ref,state,snapshot) VALUES($1,'sync',$2,$3,$4,'linked',$5::jsonb) RETURNING id", a.Connection, body.Path, task, ref, string(raw)).Scan(&sourceID)
-	} else if err == nil {
-		_, err = tx.Exec(r.Context(), "UPDATE sources SET snapshot=$2::jsonb,state='linked' WHERE id=$1", sourceID, string(raw))
-	}
-	if err != nil {
-		syncFail(out, 409, "任务关联存在冲突，请核对。")
-		return
-	}
-	_, err = tx.Exec(r.Context(), "INSERT INTO path_aliases(connection_id,vault_key,path,source_id) VALUES($1,'sync',$2,$3) ON CONFLICT(connection_id,vault_key,path) DO NOTHING", a.Connection, body.Path, sourceID)
+	var incoming tasknotes.Task
+	if json.Unmarshal(raw,&incoming)!=nil {syncFail(out,409,"任务快照需要核对。");return}
+	sourceID,err:=linkSource(r.Context(),tx,a.Connection,task,ref,incoming)
+	if err!=nil {syncFail(out,409,"任务关联存在冲突，请核对。");return}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), "UPDATE sync_objects SET path=$2,note_created=$3,binding_state='bound',source_id=$4,updated_at=NOW() WHERE id=$1", body.SyncID, body.Path, body.Created, sourceID)
 	}

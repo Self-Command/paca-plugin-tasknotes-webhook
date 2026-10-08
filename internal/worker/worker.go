@@ -221,12 +221,14 @@ func (w *Worker) tick(ctx context.Context) (result error) {
 	}
 	var id int64
 	var raw []byte
+	var attempts int
+	var received time.Time
 	lease := make([]byte, 24)
 	if _, err = rand.Read(lease); err != nil {
 		return err
 	}
 	owner := hex.EncodeToString(lease)
-	err = w.DB.QueryRow(ctx, "UPDATE inbox SET lease_owner=$2,lease_until=NOW()+INTERVAL '60 seconds' WHERE id=(SELECT id FROM inbox WHERE connection_id=$1 AND state IN ('pending','error','uncertain') AND next_attempt<=NOW() AND (lease_until IS NULL OR lease_until<NOW()) ORDER BY id LIMIT 1) RETURNING id,body", connectionID, owner).Scan(&id, &raw)
+	err = w.DB.QueryRow(ctx, "UPDATE inbox SET lease_owner=$2,lease_until=NOW()+INTERVAL '60 seconds' WHERE id=(SELECT id FROM inbox WHERE connection_id=$1 AND state IN ('pending','error','uncertain') AND next_attempt<=NOW() AND (lease_until IS NULL OR lease_until<NOW()) ORDER BY id LIMIT 1) RETURNING id,body,attempts,received_at", connectionID, owner).Scan(&id, &raw, &attempts, &received)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -238,6 +240,11 @@ func (w *Worker) tick(ctx context.Context) (result error) {
 		defer releaseCancel()
 		if result != nil {
 			state, message := "error", "任务处理暂未完成，将稍后重试。"
+			var pending associationPending
+			if errors.As(result,&pending) {
+				message=pending.Error()
+				if associationWaitExhausted(attempts,received,time.Now()) {state,message="conflict","待关联："+message+" 请关联母任务后手动重处理。"}
+			}
 			var conflict associationConflict
 			if errors.As(result, &conflict) {
 				state, message = "conflict", conflict.Error()
@@ -506,7 +513,7 @@ func (w *Worker) resolve(ctx context.Context, c connection, e tasknotes.Envelope
 		if e.Event != "task.created" && e.Event != "task.deleted" {
 			initialState = "unassociated"
 		}
-		err = tx.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,external_ref,state) VALUES($1,$2,$3,$4,$5) RETURNING id", c.ID, e.VaultKey(), path, ref, initialState).Scan(&sid)
+		err = tx.QueryRow(ctx, "INSERT INTO sources(connection_id,vault_key,source_key,external_ref,state,generation) SELECT $1,$2,$3,$4,$5,COALESCE(MAX(generation),0)+1 FROM sources WHERE connection_id=$1 AND vault_key=$2 AND source_key=$3 RETURNING id", c.ID, e.VaultKey(), path, ref, initialState).Scan(&sid)
 	}
 	if err != nil {
 		return source{}, err
