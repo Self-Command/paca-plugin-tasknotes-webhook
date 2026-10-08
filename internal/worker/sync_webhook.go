@@ -82,7 +82,7 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 	var remote tasksync.Snapshot
 	_ = json.Unmarshal(remoteRaw, &remote)
 	// Explicit receipts identify every server-origin write, not only check-in status.
-	if len(tasksync.Diff(incoming, remote)) == 0 {
+	if e.Event != "task.deleted" && len(tasksync.Diff(incoming, remote)) == 0 {
 		return true, w.applied(ctx, inbox, s, e, s.State)
 	}
 	rows, err := w.Pool.Query(ctx, "SELECT COALESCE(actual,expected) FROM sync_receipts WHERE object_id=$1 AND state IN('prepared','confirmed','observed') ORDER BY created_at DESC LIMIT 20", object)
@@ -103,7 +103,7 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 		}
 	}
 	rows.Close()
-	if matched {
+	if matched && e.Event != "task.deleted" {
 		return true, w.applied(ctx, inbox, s, e, s.State)
 	}
 	if s.Snapshot == nil && e.Data.Previous == nil {

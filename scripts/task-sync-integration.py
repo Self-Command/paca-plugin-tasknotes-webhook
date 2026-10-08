@@ -143,6 +143,20 @@ try:
     request('PATCH',f'/admin/plugins/{installed["id"]}',{'enabled':False})
     sync_request('GET','/info',expected=401)
     request('PATCH',f'/admin/plugins/{installed["id"]}',{'enabled':True})
+    # Deletion is an intent even when the final task snapshot is unchanged.
+    delete_core=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'相同快照仍然删除'},201)['data']
+    delete_item=sync_item(delete_core['id'])
+    sync_request('POST','/bindings',{'sync_id':delete_item['sync_id'],'action':'claim'},200)
+    sync_request('POST','/bindings',{'sync_id':delete_item['sync_id'],'action':'confirm','path':'Tasks/删除回归.md','note_created':'2026-10-09T00:00:00Z','revision':delete_item['revision']},200)
+    final_snapshot={**delete_item['snapshot'],'id':'Tasks/删除回归.md','path':'Tasks/删除回归.md','dateCreated':'2026-10-09T00:00:00Z','dateModified':datetime.datetime.now(datetime.timezone.utc).isoformat(),'details':'<!-- paca-sync-id:'+delete_item['sync_id']+' -->'}
+    delete_raw=json.dumps({'event':'task.deleted','timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),'vault':{'name':'Deletion fixture','path':'/fixture'},'data':{'task':final_snapshot}},ensure_ascii=False).encode()
+    delete_request=urllib.request.Request(base+'/plugins/'+plugin_id+'/receive/'+sync_connection_id,data=delete_raw,method='POST',headers={'Content-Type':'application/json','X-TaskNotes-Event':'task.deleted','X-TaskNotes-Delivery-ID':'delete-same-snapshot-'+str(uuid.uuid4()),'X-TaskNotes-Signature':hmac.new(sync_sender_secret.encode(),delete_raw,hashlib.sha256).hexdigest()})
+    with urllib.request.urlopen(delete_request,timeout=20) as response:assert response.status==202
+    for _ in range(120):
+        core_rows=request('GET',f'/projects/{sync_project["id"]}/tasks?page_size=200')['data']['items']
+        if not any(row['id']==delete_core['id'] for row in core_rows):break
+        time.sleep(.5)
+    else:raise AssertionError('Unchanged deletion snapshot was misclassified as an echo')
     exec((ROOT/'scripts/recurrence-integration.py').read_text(),globals())
     (verification/'task-sync-report.json').write_text(json.dumps({'official_paca':'0.18.6','initial_preview':True,'native_create_exported':True,'project_scope':True,'creation_lease_not_stolen':True,'actual_write_ack':True,'different_fields_merged':True,'same_field_conflict':True,'operation_idempotent':True,'precise_time_preserved':True,'unmapped_custom_fields_preserved':True,'archive_unarchive':True,'lost_create_response_one_task':True,'native_delete_tombstone':True,'obsidian_delete_core':True,'durable_restart':True,'plugin_disable_pauses_sync':True},ensure_ascii=False,indent=2))
 finally:
