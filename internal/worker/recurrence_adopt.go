@@ -35,7 +35,7 @@ func (w *Worker) adoptKnownPeriods(ctx context.Context, c syncConfig, series str
 		id, date string
 		snapshot tasksync.Snapshot
 		revision int64
-		deleted bool
+		deleted  bool
 	}
 	items := []candidate{}
 	for rows.Next() {
