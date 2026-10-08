@@ -283,7 +283,8 @@ func (w *Worker) acceptNative(ctx context.Context, c syncConfig, native nativeTa
 	var revision int64
 	var wasDeleted bool
 	var currentID string
-	err = tx.QueryRow(ctx, "SELECT id::text,snapshot,revision,deleted,path,note_created,source_ref FROM sync_objects WHERE connection_id=$1 AND paca_task_id=$2 FOR UPDATE", c.ID, native.ID).Scan(&currentID, &raw, &revision, &wasDeleted, &path, &birth, &ref)
+	var priorWarning string
+	err = tx.QueryRow(ctx, "SELECT id::text,snapshot,revision,deleted,path,note_created,source_ref,last_error FROM sync_objects WHERE connection_id=$1 AND paca_task_id=$2 FOR UPDATE", c.ID, native.ID).Scan(&currentID, &raw, &revision, &wasDeleted, &path, &birth, &ref, &priorWarning)
 	if err != nil {
 		return err
 	}
@@ -302,7 +303,7 @@ func (w *Worker) acceptNative(ctx context.Context, c syncConfig, native nativeTa
 		snapshot = before
 		warnings = nil
 	}
-	if wasDeleted == deleted && !pathChanged && tasksync.Equal(snapshot, before) && len(raw) > 2 {
+	if wasDeleted == deleted && !pathChanged && tasksync.Equal(snapshot, before) && priorWarning == strings.Join(warnings, " ") && len(raw) > 2 {
 		return tx.Commit(ctx)
 	}
 	if len(raw) > 2 {

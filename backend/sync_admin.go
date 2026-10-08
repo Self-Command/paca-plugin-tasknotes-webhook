@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	plugin "github.com/Paca-AI/plugin-sdk-go"
+	"strings"
 )
 
 func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response) {

@@ -8,14 +8,16 @@ import (
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
 	"github.com/jackc/pgx/v5"
 	"regexp"
+	"sort"
 	"strconv"
- "sort"
 )
 
 func sharedTags(tags []string, c syncConfig) []string {
 	out := []string{}
 	for _, tag := range tasknotes.NormalizeTags(tags) {
-		if tag != c.TaskTag && tag != c.ArchiveTag { out = append(out, tag) }
+		if tag != c.TaskTag && tag != c.ArchiveTag {
+			out = append(out, tag)
+		}
 	}
 	sort.Strings(out)
 	return out
