@@ -60,11 +60,30 @@ try:
         if first[0]['date'] in (repeated['snapshot'].get('complete_instances') or []):break
         time.sleep(.5)
     else:raise AssertionError('A second completion reused a stale progress operation')
+    for skip in (True,False,True,False):
+        parent=sync_item(series_task)
+        skipped_date=first[2]['date']
+        skip_op=submit(parent,{'skipped_instances':[skipped_date] if skip else []})
+        wait_operation(skip_op)
+        for _ in range(180):
+            native_period=request('GET',f'/projects/{sync_project["id"]}/tasks/{first[2]["task_id"]}')['data']
+            state=next(p for p in periods(3) if p['date']==skipped_date)['state']
+            if (native_period['status_id']==sync_mapping['@archived'])==skip and state==('skipped' if skip else 'planned'):break
+            time.sleep(.5)
+        else:raise AssertionError({'skip':skip,'state':state,'native':native_period['status_id']})
     request('DELETE',f'/projects/{sync_project["id"]}/tasks/{first[1]["task_id"]}')
     for _ in range(180):
         if next(p for p in periods(3) if p['date']==first[1]['date'])['state']=='deleted':break
         time.sleep(.5)
     else:raise AssertionError('Deleted period was recreated')
+    stop_rule=submit(sync_item(series_task),{'recurrence':None,'recurrence_anchor':None})
+    wait_operation(stop_rule)
+    parent_core=request('GET',f'/projects/{sync_project["id"]}/tasks/{series_task}')['data']
+    assert parent_core['custom_fields']['_integration_state_v1']['recurring'],'Stopped parent became a normal reminder'
+    for _ in range(180):
+        if next(p for p in periods(3) if p['date']==first[2]['date'])['state']=='cancelled':break
+        time.sleep(.5)
+    else:raise AssertionError('Stopping the series retained an unstarted period')
     # A native/API/AI task can become completion-anchored using the same scoped rule endpoint.
     parent_native=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'完成后再安排','status_id':sync_mapping['open']},201)['data']
     item=sync_item(parent_native['id'])
@@ -80,6 +99,6 @@ try:
     request('PUT',route,rule_request,202)
     request('PUT',route,{**rule_request,'recurrence':'FREQ=WEEKLY'},409)
     request('PUT',route,{**rule_request,'op_id':str(uuid.uuid4())},409)
-    (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'reopen_and_complete_again':True,'deleted_period_tombstone':True,'api_ai_rule_endpoint':True,'rule_request_idempotent':True,'stale_rule_revision_rejected':True,'completion_anchor_one_pending':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
+    (verification/'recurrence-report.json').write_text(json.dumps({'official_model':'0.3.0-rc.9','fixed_daily_unique_periods':True,'server_without_obsidian':True,'precise_period_times':True,'parent_marked_unscheduled':True,'restart_no_duplicate':True,'core_complete_updates_parent_history':True,'reopen_and_complete_again':True,'repeat_skip_unskip':True,'deleted_period_tombstone':True,'stopped_series_does_not_remind_parent':True,'api_ai_rule_endpoint':True,'rule_request_idempotent':True,'stale_rule_revision_rejected':True,'completion_anchor_one_pending':True,'real_phone_verified':False},ensure_ascii=False,indent=2))
 finally:
     pass

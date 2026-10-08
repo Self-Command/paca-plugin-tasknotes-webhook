@@ -66,3 +66,20 @@ func TestUnspecifiedNativeStatusRequiresExplicitDefault(t *testing.T) {
 		t.Fatalf("explicit native defaults not honored: %#v %v", snapshot, warnings)
 	}
 }
+
+func TestStoppedSeriesParentRemainsUnscheduled(t *testing.T) {
+	c := syncConfig{connection: connection{Timezone: "Asia/Shanghai"}}
+	parent := nativeTask{Custom: map[string]any{"_integration_state_v1": map[string]any{"recurring": true}}}
+	patch, err := nativePatch(tasksync.Snapshot{"recurrence": nil}, tasksync.Snapshot{"recurrence": nil}, c, parent, "series")
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := patch["custom_fields"].(map[string]any)["_integration_state_v1"].(map[string]any)
+	if meta["recurring"] != true || meta["series_parent"] != true {
+		t.Fatal("stopping a series made its parent eligible for reminders")
+	}
+	period, err := nativePatch(tasksync.Snapshot{"recurrence": nil, "occurrence_date": "2026-10-09"}, tasksync.Snapshot{}, c, nativeTask{}, "period")
+	if err != nil || period["custom_fields"].(map[string]any)["_integration_state_v1"].(map[string]any)["recurring"] != false {
+		t.Fatal("an individual period was suppressed as a parent")
+	}
+}

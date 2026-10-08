@@ -376,7 +376,14 @@ func nativePatch(snapshot, changes tasksync.Snapshot, c syncConfig, current nati
 	meta["timezone"] = c.Timezone
 	meta["archived"] = snapshot["archived"]
 	rule, recurring := snapshot["recurrence"].(string)
-	meta["recurring"] = recurring && rule != ""
+	seriesParent := meta["series_parent"] == true || recurring && rule != ""
+	// Removing a rule stops the series; it must not turn its mother into an
+	// ordinary reminder. Periods always have their own occurrence date.
+	if meta["recurring"] == true && snapshot["occurrence_date"] == nil {
+		seriesParent = true
+	}
+	meta["series_parent"] = seriesParent
+	meta["recurring"] = seriesParent
 	for _, f := range []struct{ field, prefix, native string }{{"scheduled", "start", "start_date"}, {"due", "due", "due_date"}} {
 		if _, changed := changes[f.field]; changed {
 			raw, _ := snapshot[f.field].(string)

@@ -155,12 +155,12 @@ func (w *Worker) advanceCompletedPeriods(ctx context.Context, c syncConfig, seri
 				return false, err
 			}
 			if skipped && p.native.ID != "" {
-				if err = w.queuePeriodOperation(ctx, c, p.id, p.revision, "update", p.current, tasksync.Snapshot{"archived": true}, "skip:"+p.id); err != nil {
+				if err = w.queuePeriodOperation(ctx, c, p.id, p.revision, "update", p.current, tasksync.Snapshot{"archived": true}, fmt.Sprintf("skip:%s:%d", p.id, p.revision)); err != nil {
 					return false, err
 				}
 			}
 			if !skipped && !completed[p.native.Status] && done != "" {
-				if err = w.queuePeriodOperation(ctx, c, p.id, p.revision, "update", p.current, tasksync.Snapshot{"status": done}, "complete-state:"+p.id); err != nil {
+				if err = w.queuePeriodOperation(ctx, c, p.id, p.revision, "update", p.current, tasksync.Snapshot{"status": done}, fmt.Sprintf("complete-state:%s:%d", p.id, p.revision)); err != nil {
 					return false, err
 				}
 			}
