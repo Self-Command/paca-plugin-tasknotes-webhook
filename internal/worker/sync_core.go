@@ -57,7 +57,12 @@ func nativeSnapshot(t nativeTask, c syncConfig, previous tasksync.Snapshot) (tas
 	tags := sharedTags(t.Tags, c)
 	out := tasksync.Snapshot{"title": t.Title, "tags": tags, "archived": false, "recurrence": nil}
 	warnings := []string{}
-	if text, err := tasksync.Markdown(t.Description); err == nil {
+	extra, _ := t.Custom["_task_sync_v1"].(map[string]any)
+	var description any
+	_ = json.Unmarshal(t.Description, &description)
+	if original, ok := extra["details_source"].(string); ok && extra["details_core_hash"] == tasksync.Hash(description) {
+		out["details"] = tasksync.TaskBody(original)
+	} else if text, err := tasksync.Markdown(t.Description); err == nil {
 		out["details"] = text
 	} else {
 		out["details"] = previous["details"]
@@ -406,6 +411,15 @@ func nativePatch(snapshot, changes tasksync.Snapshot, c syncConfig, current nati
 		payload["status_id"] = c.Statuses[name]
 	}
 	extra := map[string]any{}
+	if old, ok := current.Custom["_task_sync_v1"].(map[string]any); ok {
+		for key, value := range old {
+			extra[key] = value
+		}
+	}
+	if description, changed := payload["description"]; changed {
+		extra["details_source"] = snapshot["details"]
+		extra["details_core_hash"] = tasksync.Hash(description)
+	}
 	for _, key := range []string{"recurrence", "recurrence_anchor", "complete_instances", "skipped_instances", "recurrence_parent", "occurrence_date"} {
 		extra[key] = snapshot[key]
 	}

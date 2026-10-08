@@ -1,12 +1,27 @@
 package worker
 
 import (
+	"encoding/json"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"reflect"
 	"testing"
 
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
 )
+func TestMarkdownSourceSurvivesUnrelatedNativeEdits(t *testing.T) {
+	c := syncConfig{connection: connection{Statuses: map[string]string{"open": "todo"}, Priorities: map[string]int{"normal": 35}}}
+	body := "| 字段 | 内容 |\n| --- | --- |\n| 链接 | [文档](https://example.org) |\n\n私人格式保持原样"
+	snapshot := tasksync.Snapshot{"title": "内容往返", "status": "open", "priority": "normal", "details": body}
+	patch, err := nativePatch(snapshot, snapshot, c, nativeTask{}, "source")
+	if err != nil { t.Fatal(err) }
+	raw, _ := json.Marshal(patch["description"])
+	native := nativeTask{Status: "todo", Title: "Paca 修改标题", Description: raw, Custom: patch["custom_fields"].(map[string]any)}
+	got, warnings := nativeSnapshot(native, c, snapshot)
+	if len(warnings) != 0 || got["details"] != body { t.Fatalf("original Markdown lost: %#v %v",got,warnings) }
+	native.Description = json.RawMessage(`[{"type":"paragraph","content":[{"type":"text","text":"Paca 修改正文","styles":{}}],"children":[]}]`)
+	got, warnings = nativeSnapshot(native,c,snapshot)
+	if len(warnings) != 0 || got["details"] != "Paca 修改正文" { t.Fatalf("native edit masked by stale Markdown: %#v %v",got,warnings) }
+}
 
 func TestSystemTagsDoNotCauseCrossApplicationConflicts(t *testing.T) {
 	c := syncConfig{connection: connection{ArchiveTag: "已归档"}, TaskTag: "任务"}
