@@ -248,7 +248,9 @@ func (w *Worker) tick(ctx context.Context) error {
 	if err = w.hydrateLegacy(ctx, c.ID); err != nil {
 		return err
 	}
-	if _, err = w.occurrenceSource(ctx, c, &e); err != nil { return err }
+	if _, err = w.occurrenceSource(ctx, c, &e); err != nil {
+		return err
+	}
 	if _, err = w.markerSource(ctx, c, e); err != nil {
 		return err
 	}

@@ -16,9 +16,9 @@ import (
 
 type syncConfig struct {
 	connection
-	Mode    string
-	Reverse map[string]string
-	TaskTag string
+	Mode       string
+	Reverse    map[string]string
+	TaskTag    string
 	Recurrence bool
 }
 type nativeTask struct {

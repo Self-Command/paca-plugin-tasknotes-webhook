@@ -16,24 +16,24 @@ import (
 )
 
 type Task struct {
-	ID           string   `json:"id"`
-	Path         string   `json:"path"`
-	Title        string   `json:"title"`
-	Details      *string  `json:"details,omitempty"`
-	Status       string   `json:"status"`
-	Priority     string   `json:"priority"`
-	Scheduled    string   `json:"scheduled"`
-	Due          string   `json:"due"`
-	Archived     bool     `json:"archived"`
-	Tags         []string `json:"tags"`
-	DateModified string   `json:"dateModified"`
-	DateCreated  string   `json:"dateCreated,omitempty"`
-	Recurrence   any      `json:"recurrence"`
-	Anchor string `json:"recurrence_anchor,omitempty"`
-	Complete []string `json:"complete_instances,omitempty"`
-	Skipped []string `json:"skipped_instances,omitempty"`
-	Parent string `json:"recurrence_parent,omitempty"`
-	OccurrenceDate string `json:"occurrence_date,omitempty"`
+	ID             string   `json:"id"`
+	Path           string   `json:"path"`
+	Title          string   `json:"title"`
+	Details        *string  `json:"details,omitempty"`
+	Status         string   `json:"status"`
+	Priority       string   `json:"priority"`
+	Scheduled      string   `json:"scheduled"`
+	Due            string   `json:"due"`
+	Archived       bool     `json:"archived"`
+	Tags           []string `json:"tags"`
+	DateModified   string   `json:"dateModified"`
+	DateCreated    string   `json:"dateCreated,omitempty"`
+	Recurrence     any      `json:"recurrence"`
+	Anchor         string   `json:"recurrence_anchor,omitempty"`
+	Complete       []string `json:"complete_instances,omitempty"`
+	Skipped        []string `json:"skipped_instances,omitempty"`
+	Parent         string   `json:"recurrence_parent,omitempty"`
+	OccurrenceDate string   `json:"occurrence_date,omitempty"`
 }
 
 func (t Task) Recurring() bool {
@@ -54,10 +54,10 @@ type Envelope struct {
 		Path string `json:"path"`
 	} `json:"vault"`
 	Data struct {
-		Task     Task  `json:"task"`
-		Previous *Task `json:"previous,omitempty"`
-		Occurrence *Task `json:"occurrence,omitempty"`
-		Date string `json:"date,omitempty"`
+		Task       Task   `json:"task"`
+		Previous   *Task  `json:"previous,omitempty"`
+		Occurrence *Task  `json:"occurrence,omitempty"`
+		Date       string `json:"date,omitempty"`
 	} `json:"data"`
 }
 

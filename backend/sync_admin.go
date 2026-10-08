@@ -12,12 +12,12 @@ import (
 
 func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response) {
 	body, err := plugin.JSONBody[struct {
-		Mode     string            `json:"mode"`
-		Vault    string            `json:"vault_id"`
-		Revision int               `json:"revision"`
-		Reverse  map[string]string `json:"reverse_status_map"`
-		Recurrence *bool `json:"recurrence_enabled"`
-		TaskTag  *string           `json:"task_tag"`
+		Mode       string            `json:"mode"`
+		Vault      string            `json:"vault_id"`
+		Revision   int               `json:"revision"`
+		Reverse    map[string]string `json:"reverse_status_map"`
+		Recurrence *bool             `json:"recurrence_enabled"`
+		TaskTag    *string           `json:"task_tag"`
 	}](req)
 	if err != nil || (body.Mode != "off" && body.Mode != "preview" && body.Mode != "enabled") || len(body.Vault) > 128 || body.Revision < 1 {
 		res.Error(400, "请检查同步模式、笔记库和设置版本。")

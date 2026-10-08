@@ -1,25 +1,45 @@
 package worker
 
 import (
- "context"
- "net/http"
- "net/http/httptest"
- "testing"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
+
 func TestPeriodFreezeMustBeExplicitAndScoped(t *testing.T) {
- for _,test:=range []struct{name,body string;code int;frozen,wantError bool}{
-  {"not configured",`{"enabled":false}`,200,false,false},
-  {"open",`{"enabled":true,"frozen":true}`,200,true,false},
-  {"future",`{"enabled":true,"frozen":false}`,200,false,false},
-  {"old worker",`{"enabled":true}`,200,false,true},
-  {"service unavailable",`{}`,503,false,true},
- } {t.Run(test.name,func(t *testing.T){
-  server:=httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter,r *http.Request){if r.URL.Path!="/internal/v1/task"||r.Header.Get("Authorization")!="Bearer service"{t.Error("unscoped freeze query")};out.WriteHeader(test.code);out.Write([]byte(test.body))}));defer server.Close()
-  w:=Worker{CheckinURL:server.URL,CheckinSecret:"service",HTTP:server.Client()}
-  frozen,err:=w.periodFrozen(context.Background(),syncConfig{connection:connection{Project:"project"}},"task")
-  if frozen!=test.frozen||(err!=nil)!=test.wantError{t.Fatalf("freeze=%v err=%v",frozen,err)}
- })}
+	for _, test := range []struct {
+		name, body        string
+		code              int
+		frozen, wantError bool
+	}{
+		{"not configured", `{"enabled":false}`, 200, false, false},
+		{"open", `{"enabled":true,"frozen":true}`, 200, true, false},
+		{"future", `{"enabled":true,"frozen":false}`, 200, false, false},
+		{"old worker", `{"enabled":true}`, 200, false, true},
+		{"service unavailable", `{}`, 503, false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/internal/v1/task" || r.Header.Get("Authorization") != "Bearer service" {
+					t.Error("unscoped freeze query")
+				}
+				out.WriteHeader(test.code)
+				out.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			w := Worker{CheckinURL: server.URL, CheckinSecret: "service", HTTP: server.Client()}
+			frozen, err := w.periodFrozen(context.Background(), syncConfig{connection: connection{Project: "project"}}, "task")
+			if frozen != test.frozen || (err != nil) != test.wantError {
+				t.Fatalf("freeze=%v err=%v", frozen, err)
+			}
+		})
+	}
 }
 func TestParentReferenceRequiresPathNotTitleGuess(t *testing.T) {
- for ref,path:=range map[string]string{"[[Tasks/阅读]]":"Tasks/阅读.md","[[Tasks/阅读|别名]]":"Tasks/阅读.md","[阅读](<Tasks/%E9%98%85%E8%AF%BB.md>)":"Tasks/阅读.md","[[../Secrets]]":"","https://example.org/task":""}{if actual:=parentPath(ref);actual!=path{t.Fatalf("reference %q produced %q",ref,actual)}}
+	for ref, path := range map[string]string{"[[Tasks/阅读]]": "Tasks/阅读.md", "[[Tasks/阅读|别名]]": "Tasks/阅读.md", "[阅读](<Tasks/%E9%98%85%E8%AF%BB.md>)": "Tasks/阅读.md", "[[../Secrets]]": "", "https://example.org/task": ""} {
+		if actual := parentPath(ref); actual != path {
+			t.Fatalf("reference %q produced %q", ref, actual)
+		}
+	}
 }

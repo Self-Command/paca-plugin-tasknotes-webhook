@@ -94,6 +94,13 @@ try:
         assert version==lock['obsidian']['version'],f'Obsidian runtime changed: {version}'
         ui_page.evaluate('()=>window.localStorage.setItem("language","en")')
         def command(search,label):
+            ui_page.bring_to_front()
+            for trust_label in ['Trust author and enable plugins','Turn on community plugins','Enable community plugins']:
+                trust_button=ui_page.get_by_role('button',name=trust_label,exact=True)
+                if trust_button.is_visible():
+                    trust_button.click()
+                    trust_button.wait_for(state='hidden',timeout=15000)
+            ui_page.wait_for_function('()=>Boolean(app.commands.commands["command-palette:open"])',timeout=30000)
             ui_page.evaluate('()=>app.commands.executeCommandById("command-palette:open")')
             ui_page.locator('.prompt-input').fill(search)
             ui_page.locator('.suggestion-item').filter(has_text=re.compile(label,re.I)).first.click()

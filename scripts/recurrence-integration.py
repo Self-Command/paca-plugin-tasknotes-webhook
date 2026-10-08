@@ -37,6 +37,7 @@ try:
     sync_process=subprocess.Popen(['/tmp/tasknotes-worker'],env=sync_env,stdout=sync_log,stderr=sync_log)
     for _ in range(60):
         try:
+            sync_request('GET','/info')
             after=periods(3);break
         except OSError:time.sleep(.3)
     assert [p['task_id'] for p in after]==[p['task_id'] for p in first],'Restart duplicated periods'
