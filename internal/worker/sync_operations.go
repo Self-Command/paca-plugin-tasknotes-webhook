@@ -166,6 +166,21 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 				}
 				op.SyncID = periodID
 			}
+			if op.OpID != "period-create:"+periodID {
+				var expected []byte
+				var ready bool
+				if err = w.Pool.QueryRow(ctx, "SELECT p.expected,o.paca_task_id IS NOT NULL FROM recurring_periods p JOIN sync_objects o ON o.id=p.object_id WHERE p.object_id=$1", periodID).Scan(&expected, &ready); err != nil {
+					return err
+				}
+				if !ready {
+					return w.syncOpRetry(ctx, id, errors.New("正在等待服务器确认本期任务。"))
+				}
+				// A first local materialization is based on the official period,
+				// not an empty unrelated task. Concurrent Paca edits still conflict.
+				if err = json.Unmarshal(expected, &op.Base); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	var task, ref string
