@@ -1,7 +1,7 @@
 {
   "id": "com.selfcommand.tasknotes-webhook",
   "displayName": "TaskNotes 接入",
-  "description": "将官方 TaskNotes 任务单向同步到 Paca，支持更新、完成、归档与删除。",
+  "description": "双向同步官方 TaskNotes 和 Paca 任务，管理来源、冲突及循环排期。",
   "version": "0.1.0",
   "minCoreVersion": "v0.18.6",
   "permissions": [
@@ -31,7 +31,11 @@
       "ENCRYPTION_KEY",
       "PUBLIC_URL"
     ],
-    "eventSubscriptions": [],
+    "eventSubscriptions": [
+      "task.created",
+      "task.updated",
+      "task.deleted"
+    ],
     "routes": [
       {
         "method": "GET",
@@ -256,6 +260,82 @@
             ]
           }
         ]
+      },
+      {
+        "method": "PUT",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/connections/:id/sync-config"
+      },
+      {
+        "method": "GET",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/connections/:id/sync-preview"
+      },
+      {
+        "method": "POST",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/connections/:id/pairing"
+      },
+      {
+        "method": "DELETE",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/connections/:id/pairing/:credential"
       }
     ],
     "sensitiveFields": {

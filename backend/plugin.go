@@ -31,6 +31,11 @@ func (p *integrationPlugin) Init(ctx *plugin.Context) error {
 	ctx.Route("POST", "/projects/:projectId/connections/:id/reprocess/:deliveryId", p.reprocess)
 	ctx.Route("POST", "/projects/:projectId/connections/:id/link", p.link)
 	ctx.Route("POST", "/receive/:id", p.receive)
+ctx.Route("PUT", "/projects/:projectId/connections/:id/sync-config",p.syncConfig)
+ctx.Route("GET", "/projects/:projectId/connections/:id/sync-preview",p.syncPreview)
+ctx.Route("POST", "/projects/:projectId/connections/:id/pairing",p.syncPair)
+ctx.Route("DELETE", "/projects/:projectId/connections/:id/pairing/:credential",p.revokeSync)
+for _,topic:=range []string{"task.created","task.updated","task.deleted"}{ctx.On(topic,p.syncDirty)}
 	return nil
 }
 func (p *integrationPlugin) Shutdown() {}

@@ -6,6 +6,7 @@ import (
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/worker"
 	"log"
+"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,7 +24,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() { _ = w.DB.Close(context.Background()) }()
+	defer w.Pool.Close()
+listen:=os.Getenv("LISTEN_ADDR");if listen==""{listen=":8091"};server:=&http.Server{Addr:listen,Handler:w.Handler(),ReadHeaderTimeout:10*time.Second,ReadTimeout:30*time.Second,WriteTimeout:30*time.Second,IdleTimeout:60*time.Second};go func(){if err:=server.ListenAndServe();err!=nil&&err!=http.ErrServerClosed{log.Print("task sync listener unavailable");stop()}}();defer server.Shutdown(context.Background())
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -31,17 +33,10 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if w.DB.IsClosed() {
-				replacement, connectErr := worker.New(ctx)
-				if connectErr != nil {
-					log.Print("database reconnect pending")
-					continue
-				}
-				w = replacement
-			}
 			if err = w.Tick(ctx); err != nil {
 				log.Printf("processing paused: %v", err)
 			}
+if err=w.SyncTick(ctx);err!=nil{log.Print("task synchronization pending; retrying")}
 		}
 	}
 }
