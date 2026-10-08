@@ -14,8 +14,24 @@ func (p *integrationPlugin) sourceLink(req *plugin.Request, res *plugin.Response
 		return
 	}
 	if len(rows.Rows) == 0 {
-		native,lookupErr:=p.db.Query("SELECT o.connection_id::text,o.source_ref,o.path,o.note_created,o.snapshot::text,o.path_aliases::text FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND o.paca_task_id=$2 AND NOT o.deleted AND c.sync_mode='enabled'",req.PathParam("projectId"),req.PathParam("taskId"))
-		if lookupErr!=nil{res.Error(503,"任务来源暂时无法读取。");return};if len(native.Rows)!=1{res.Error(404,"任务尚未关联笔记库。");return};r:=native.Rows[0];var snapshot map[string]any;_=json.Unmarshal([]byte(fmt.Sprint(r[4])),&snapshot);snapshot["path"]=r[2];snapshot["dateCreated"]=r[3];var aliases any;_=json.Unmarshal([]byte(fmt.Sprint(r[5])),&aliases);res.JSON(200,map[string]any{"connection_id":r[0],"source_ref":r[1],"path":r[2],"snapshot":snapshot,"aliases":aliases,"state":"linked"});return
+		native, lookupErr := p.db.Query("SELECT o.connection_id::text,o.source_ref,o.path,o.note_created,o.snapshot::text,o.path_aliases::text FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND o.paca_task_id=$2 AND NOT o.deleted AND c.sync_mode='enabled'", req.PathParam("projectId"), req.PathParam("taskId"))
+		if lookupErr != nil {
+			res.Error(503, "任务来源暂时无法读取。")
+			return
+		}
+		if len(native.Rows) != 1 {
+			res.Error(404, "任务尚未关联笔记库。")
+			return
+		}
+		r := native.Rows[0]
+		var snapshot map[string]any
+		_ = json.Unmarshal([]byte(fmt.Sprint(r[4])), &snapshot)
+		snapshot["path"] = r[2]
+		snapshot["dateCreated"] = r[3]
+		var aliases any
+		_ = json.Unmarshal([]byte(fmt.Sprint(r[5])), &aliases)
+		res.JSON(200, map[string]any{"connection_id": r[0], "source_ref": r[1], "path": r[2], "snapshot": snapshot, "aliases": aliases, "state": "linked"})
+		return
 	}
 	if len(rows.Rows) != 1 {
 		res.Error(409, "multiple source links require manual resolution")

@@ -83,11 +83,11 @@ func (p *integrationPlugin) connections(req *plugin.Request, res *plugin.Respons
 	}
 	items := []any{}
 	for _, r := range rows.Rows {
-		var statuses, priorities,reverse any
+		var statuses, priorities, reverse any
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[4])), &statuses)
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[5])), &priorities)
-_ =json.Unmarshal([]byte(fmt.Sprint(r[9])),&reverse)
-		items = append(items, map[string]any{"id": r[0], "name": r[1], "enabled": r[2], "timezone": r[3], "status_map": statuses, "priority_map": priorities, "revision": r[6], "archive_tag": r[7],"sync_mode":r[8],"reverse_status_map":reverse})
+		_ = json.Unmarshal([]byte(fmt.Sprint(r[9])), &reverse)
+		items = append(items, map[string]any{"id": r[0], "name": r[1], "enabled": r[2], "timezone": r[3], "status_map": statuses, "priority_map": priorities, "revision": r[6], "archive_tag": r[7], "sync_mode": r[8], "reverse_status_map": reverse})
 	}
 	res.JSON(200, map[string]any{"items": items})
 }

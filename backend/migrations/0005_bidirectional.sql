@@ -22,4 +22,6 @@ CREATE TABLE sync_conflicts(id UUID PRIMARY KEY,connection_id UUID NOT NULL REFE
 CREATE TABLE sync_scan_state(connection_id UUID PRIMARY KEY REFERENCES connections(id),last_complete TIMESTAMPTZ,last_error TEXT NOT NULL DEFAULT '');
 CREATE TABLE sync_dirty(project_id UUID PRIMARY KEY,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 ALTER TABLE sync_operations ADD COLUMN inbox_id BIGINT REFERENCES inbox(id);
+ALTER TABLE sync_receipts ADD COLUMN fields JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE sync_receipts ADD COLUMN actual JSONB;
 UPDATE plugin_metadata SET version=5 WHERE id=1;

@@ -22,7 +22,7 @@ import (
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"github.com/jackc/pgx/v5"
- "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const PluginID = "com.selfcommand.tasknotes-webhook"
@@ -31,7 +31,7 @@ const Schema = "plugin_data_com_selfcommand_tasknotes_webhook"
 
 type Worker struct {
 	DB                        *pgx.Conn
- Pool *pgxpool.Pool
+	Pool                      *pgxpool.Pool
 	API, Key, Secret          string
 	CheckinURL, CheckinSecret string
 	HTTP                      *http.Client
@@ -69,13 +69,16 @@ func New(ctx context.Context) (*Worker, error) {
 		return nil, err
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = Schema
- cfg.MaxConns = 4
+	cfg.MaxConns = 4
 	db, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	if err = db.Ping(ctx); err != nil {db.Close();return nil,err}
- w := &Worker{Pool: db, API: base, Key: key, Secret: secret, HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	if err = db.Ping(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	w := &Worker{Pool: db, API: base, Key: key, Secret: secret, HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if err = w.configureCheckin(); err != nil {
 		db.Close()
 		return nil, err
@@ -177,7 +180,14 @@ type task struct {
 
 // Keep legacy session-level advisory locks on one acquired connection.
 func (w *Worker) Tick(ctx context.Context) error {
- acquired,err:=w.Pool.Acquire(ctx);if err!=nil{return err};defer acquired.Release();legacy:=*w;legacy.DB=acquired.Conn();return legacy.tick(ctx)
+	acquired, err := w.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer acquired.Release()
+	legacy := *w
+	legacy.DB = acquired.Conn()
+	return legacy.tick(ctx)
 }
 func (w *Worker) tick(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
@@ -235,8 +245,10 @@ func (w *Worker) tick(ctx context.Context) error {
 	if err = w.hydrateLegacy(ctx, c.ID); err != nil {
 		return err
 	}
-	if _,err=w.markerSource(ctx,c,e);err!=nil{return err}
-s, err := w.resolve(ctx, c, e)
+	if _, err = w.markerSource(ctx, c, e); err != nil {
+		return err
+	}
+	s, err := w.resolve(ctx, c, e)
 	if err != nil {
 		var conflict associationConflict
 		if errors.As(err, &conflict) {
@@ -260,8 +272,10 @@ s, err := w.resolve(ctx, c, e)
 	if echo {
 		return w.applied(ctx, id, s, e, s.State)
 	}
-	if handled,syncErr:=w.syncWebhook(ctx,c,s,e,id);handled{return syncErr}
-decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
+	if handled, syncErr := w.syncWebhook(ctx, c, s, e, id); handled {
+		return syncErr
+	}
+	decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
 	if decision != "apply" {
 		if decision == "duplicate" {
 			return w.applied(ctx, id, s, e, s.State)

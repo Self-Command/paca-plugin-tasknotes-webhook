@@ -6,7 +6,7 @@ import (
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/buildinfo"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/worker"
 	"log"
-"net/http"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,7 +25,18 @@ func main() {
 		log.Fatal(err)
 	}
 	defer w.Pool.Close()
-listen:=os.Getenv("LISTEN_ADDR");if listen==""{listen=":8091"};server:=&http.Server{Addr:listen,Handler:w.Handler(),ReadHeaderTimeout:10*time.Second,ReadTimeout:30*time.Second,WriteTimeout:30*time.Second,IdleTimeout:60*time.Second};go func(){if err:=server.ListenAndServe();err!=nil&&err!=http.ErrServerClosed{log.Print("task sync listener unavailable");stop()}}();defer server.Shutdown(context.Background())
+	listen := os.Getenv("LISTEN_ADDR")
+	if listen == "" {
+		listen = ":8091"
+	}
+	server := &http.Server{Addr: listen, Handler: w.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Print("task sync listener unavailable")
+			stop()
+		}
+	}()
+	defer server.Shutdown(context.Background())
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -36,7 +47,9 @@ listen:=os.Getenv("LISTEN_ADDR");if listen==""{listen=":8091"};server:=&http.Ser
 			if err = w.Tick(ctx); err != nil {
 				log.Printf("processing paused: %v", err)
 			}
-if err=w.SyncTick(ctx);err!=nil{log.Print("task synchronization pending; retrying")}
+			if err = w.SyncTick(ctx); err != nil {
+				log.Print("task synchronization pending; retrying")
+			}
 		}
 	}
 }
