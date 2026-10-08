@@ -16,6 +16,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 		Vault    string            `json:"vault_id"`
 		Revision int               `json:"revision"`
 		Reverse  map[string]string `json:"reverse_status_map"`
+		Recurrence *bool `json:"recurrence_enabled"`
 		TaskTag  *string           `json:"task_tag"`
 	}](req)
 	if err != nil || (body.Mode != "off" && body.Mode != "preview" && body.Mode != "enabled") || len(body.Vault) > 128 || body.Revision < 1 {
@@ -43,7 +44,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 			return
 		}
 	}
-	changed, err := p.db.Exec("UPDATE connections SET sync_mode=$1,vault_id=COALESCE(NULLIF($2,''),vault_id),reverse_status_map=$3::jsonb,task_tag=COALESCE($7,task_tag),revision=revision+1 WHERE project_id=$4 AND id=$5 AND revision=$6", body.Mode, body.Vault, string(raw), req.PathParam("projectId"), req.PathParam("id"), body.Revision, body.TaskTag)
+	changed, err := p.db.Exec("UPDATE connections SET sync_mode=$1,vault_id=COALESCE(NULLIF($2,''),vault_id),reverse_status_map=$3::jsonb,task_tag=COALESCE($7,task_tag),recurrence_enabled=COALESCE($8,recurrence_enabled),revision=revision+1 WHERE project_id=$4 AND id=$5 AND revision=$6", body.Mode, body.Vault, string(raw), req.PathParam("projectId"), req.PathParam("id"), body.Revision, body.TaskTag, body.Recurrence)
 	if err != nil {
 		res.Error(503, "同步设置暂时无法保存。")
 		return

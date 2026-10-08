@@ -8,3 +8,5 @@
 /data/
 *.log
 internal/buildinfo/stamp.go
+
+/recurrence/node_modules/

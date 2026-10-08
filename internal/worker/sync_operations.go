@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func rawTokenHash(token string) string {
@@ -45,6 +46,10 @@ func (w *Worker) submitSyncOperation(out http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if _, err = tx.Exec(r.Context(), "SELECT pg_advisory_xact_lock(hashtextextended($1,7))", a.Connection+":"+body.OpID); err != nil {
+		syncFail(out, 503, "任务操作暂时无法保存。")
+		return
+	}
 	var storedHash, state string
 	var result []byte
 	err = tx.QueryRow(r.Context(), "SELECT body_hash,state,result FROM sync_operations WHERE connection_id=$1 AND op_id=$2", a.Connection, body.OpID).Scan(&storedHash, &state, &result)
@@ -144,6 +149,15 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	if canonical != nil {
 		op.SyncID = *canonical
 	}
+	if op.Kind == "create" {
+		parent, _ := op.Changes["recurrence_parent"].(string)
+		date, _ := op.Changes["occurrence_date"].(string)
+		if syncUUID.MatchString(parent) && date != "" {
+			var periodID string
+			if lookupErr := w.Pool.QueryRow(ctx,"SELECT p.object_id::text FROM recurring_periods p JOIN recurring_series s ON s.object_id=p.series_id WHERE p.series_id=$1 AND p.occurrence_date=$2 AND s.connection_id=$3 AND p.state NOT IN('deleted','cancelled','skipped')",parent,date,c.ID).Scan(&periodID); lookupErr != nil { return w.syncOpRetry(ctx,id,errors.New("正在等待对应周期建立。")) }
+			if periodID != op.SyncID { if _,err=w.Pool.Exec(ctx,"UPDATE sync_objects SET canonical_id=$2 WHERE id=$1",op.SyncID,periodID);err!=nil{return err};op.SyncID=periodID }
+		}
+	}
 	var task, ref string
 	var revision int64
 	var beforeRaw []byte
@@ -238,6 +252,12 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	patchChanges := op.Changes
 	if op.Kind == "create" {
 		patchChanges = merged
+	}
+	if rule, ok := merged["recurrence"].(string); ok && rule != "" {
+		loc, loadErr := time.LoadLocation(c.Timezone)
+		if loadErr != nil { return w.syncOpDone(ctx,id,"failed",map[string]any{},"任务时区无效。") }
+		now := time.Now().In(loc)
+		if _, modelErr := recurrenceModel(ctx,c.Timezone,map[string]any{"task":merged,"today":now.Format("2006-01-02"),"end":now.Format("2006-01-02"),"series_id":op.SyncID}); modelErr != nil { return w.syncOpDone(ctx,id,"failed",map[string]any{},modelErr.Error()) }
 	}
 	payload, err := nativePatch(merged, patchChanges, c, current, ref)
 	if err != nil {

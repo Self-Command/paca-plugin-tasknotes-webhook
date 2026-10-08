@@ -113,7 +113,7 @@ func (w *Worker) control(ctx context.Context) error {
 		Enabled bool   `json:"enabled"`
 		Source  string `json:"source_sha"`
 	}
-	if r.StatusCode != 200 || json.NewDecoder(io.LimitReader(r.Body, 65536)).Decode(&c) != nil || !c.Enabled || c.ID != PluginID || c.Version != Version || c.Schema != 5 || len(buildinfo.SourceSHA) != 40 || c.Source != buildinfo.SourceSHA {
+	if r.StatusCode != 200 || json.NewDecoder(io.LimitReader(r.Body, 65536)).Decode(&c) != nil || !c.Enabled || c.ID != PluginID || c.Version != Version || c.Schema != 6 || len(buildinfo.SourceSHA) != 40 || c.Source != buildinfo.SourceSHA {
 		return errors.New("host disabled or worker version/schema mismatch")
 	}
 	return nil
@@ -242,9 +242,13 @@ func (w *Worker) tick(ctx context.Context) error {
 	if err != nil {
 		return w.finish(ctx, id, "conflict", "invalid stored envelope")
 	}
+	if e.Event == "recurring.instance.completed" || e.Event == "recurring.instance.skipped" {
+		e.Event = "task.updated"
+	}
 	if err = w.hydrateLegacy(ctx, c.ID); err != nil {
 		return err
 	}
+	if _, err = w.occurrenceSource(ctx, c, &e); err != nil { return err }
 	if _, err = w.markerSource(ctx, c, e); err != nil {
 		return err
 	}
@@ -265,15 +269,15 @@ func (w *Worker) tick(ctx context.Context) error {
 			e.Data.Previous.Details = s.Snapshot.Details
 		}
 	}
+	if handled, syncErr := w.syncWebhook(ctx, c, s, e, id); handled {
+		return syncErr
+	}
 	echo, echoErr := w.checkinEcho(ctx, c, s, e)
 	if echoErr != nil {
 		return fmt.Errorf("writeback confirmation temporarily unavailable: %w", echoErr)
 	}
 	if echo {
 		return w.applied(ctx, id, s, e, s.State)
-	}
-	if handled, syncErr := w.syncWebhook(ctx, c, s, e, id); handled {
-		return syncErr
 	}
 	decision, message := eventDecisionWithArchive(s, e, time.Now(), c.ArchiveTag)
 	if decision != "apply" {

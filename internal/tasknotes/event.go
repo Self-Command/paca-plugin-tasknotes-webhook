@@ -29,6 +29,11 @@ type Task struct {
 	DateModified string   `json:"dateModified"`
 	DateCreated  string   `json:"dateCreated,omitempty"`
 	Recurrence   any      `json:"recurrence"`
+	Anchor string `json:"recurrence_anchor,omitempty"`
+	Complete []string `json:"complete_instances,omitempty"`
+	Skipped []string `json:"skipped_instances,omitempty"`
+	Parent string `json:"recurrence_parent,omitempty"`
+	OccurrenceDate string `json:"occurrence_date,omitempty"`
 }
 
 func (t Task) Recurring() bool {
@@ -51,12 +56,14 @@ type Envelope struct {
 	Data struct {
 		Task     Task  `json:"task"`
 		Previous *Task `json:"previous,omitempty"`
+		Occurrence *Task `json:"occurrence,omitempty"`
+		Date string `json:"date,omitempty"`
 	} `json:"data"`
 }
 
 func AllowedEvent(event string) bool {
 	switch event {
-	case "task.created", "task.updated", "task.completed", "task.deleted", "task.archived", "task.unarchived":
+	case "task.created", "task.updated", "task.completed", "task.deleted", "task.archived", "task.unarchived", "recurring.instance.completed", "recurring.instance.skipped":
 		return true
 	}
 	return false

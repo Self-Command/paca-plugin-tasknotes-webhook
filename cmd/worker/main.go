@@ -50,6 +50,9 @@ func main() {
 			if err = w.SyncTick(ctx); err != nil {
 				log.Print("task synchronization pending; retrying")
 			}
+			if err = w.RecurrenceTick(ctx); err != nil {
+				log.Print("recurrence reconciliation pending; retrying")
+			}
 		}
 	}
 }

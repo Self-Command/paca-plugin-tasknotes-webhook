@@ -336,6 +336,44 @@
           }
         ],
         "path": "/projects/:projectId/connections/:id/pairing/:credential"
+      },
+      {
+        "method": "GET",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/tasks/:taskId/recurrence"
+      },
+      {
+        "method": "PUT",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/tasks/:taskId/recurrence"
       }
     ],
     "sensitiveFields": {
@@ -363,7 +401,17 @@
         "label": "TaskNotes 来源",
         "order": 110,
         "requiredPermission": "tasknotes_webhook.read"
+      },
+      {
+        "point": "task.detail.section",
+        "component": "TaskRecurrenceSection",
+        "label": "循环任务",
+        "order": 111,
+        "requiredPermission": "tasknotes_webhook.read"
       }
     ]
+  },
+  "mcp": {
+    "remoteEntryUrl": "/plugins-mcp/com.selfcommand.tasknotes-webhook/mcp.js"
   }
 }

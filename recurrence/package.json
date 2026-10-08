@@ -1,0 +1,7 @@
+{
+  "name": "paca-tasknotes-recurrence",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test test.mjs"},
+  "dependencies": {"@tasknotes/model": "0.3.0-rc.9", "rrule": "2.8.1"}
+}

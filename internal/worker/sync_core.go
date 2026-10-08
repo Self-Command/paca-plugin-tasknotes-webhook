@@ -19,6 +19,7 @@ type syncConfig struct {
 	Mode    string
 	Reverse map[string]string
 	TaskTag string
+	Recurrence bool
 }
 type nativeTask struct {
 	ID          string          `json:"id"`
@@ -35,7 +36,7 @@ type nativeTask struct {
 func (w *Worker) syncConfig(ctx context.Context, id string) (syncConfig, error) {
 	c := syncConfig{connection: connection{ID: id}}
 	var sm, pm, reverse []byte
-	err := w.Pool.QueryRow(ctx, "SELECT project_id::text,timezone,status_map,priority_map,revision,archive_tag,sync_mode,reverse_status_map,task_tag FROM connections WHERE id=$1 AND enabled", id).Scan(&c.Project, &c.Timezone, &sm, &pm, &c.Revision, &c.ArchiveTag, &c.Mode, &reverse, &c.TaskTag)
+	err := w.Pool.QueryRow(ctx, "SELECT project_id::text,timezone,status_map,priority_map,revision,archive_tag,sync_mode,reverse_status_map,task_tag,recurrence_enabled FROM connections WHERE id=$1 AND enabled", id).Scan(&c.Project, &c.Timezone, &sm, &pm, &c.Revision, &c.ArchiveTag, &c.Mode, &reverse, &c.TaskTag, &c.Recurrence)
 	if err != nil {
 		return c, err
 	}

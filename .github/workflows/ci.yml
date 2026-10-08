@@ -18,6 +18,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Official recurrence model
+        working-directory: recurrence
+        run: |
+          if [ -f package-lock.json ]; then npm ci --ignore-scripts; else npm install --package-lock-only --ignore-scripts && npm ci --ignore-scripts; fi
+          npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recurrence-dependency-lock
+          path: recurrence/package-lock.json
       - name: Go checks
         run: |
           printf 'package buildinfo\nfunc init() { SourceSHA = "%s" }\n' "$GITHUB_SHA" > internal/buildinfo/stamp.go
@@ -51,6 +64,7 @@ jobs:
           bun install --frozen-lockfile
           bun run typecheck
           bun run build
+          bunx tsc --noEmit --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM --skipLibCheck ../mcp/index.ts
       - name: Package
         run: |
           id=$(jq -r .id plugin.json)
@@ -60,7 +74,10 @@ jobs:
           tar -czf release/assets/frontend-dist.tar.gz -C frontend dist
           tar -czf release/assets/migrations.tar.gz -C backend migrations
           tar -czf release/assets/plugin-manifest.tar.gz -C release/wasm/$id plugin.json
-          tar -czf release/assets/plugin-install.tar.gz -C release wasm frontend
+          mkdir -p release/mcp/$id
+          bun build mcp/index.ts --target=node --format=esm --outfile release/mcp/$id/mcp.js
+          tar -czf release/assets/mcp-dist.tar.gz -C release/mcp/$id mcp.js
+          tar -czf release/assets/plugin-install.tar.gz -C release wasm frontend mcp
           jq --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" '. + {source_sha:$sha,action_run:$run}' release/wasm/$id/plugin.json > release/assets/build-info.json
           cd release/assets
           sha256sum *.tar.gz build-info.json > checksums.txt
@@ -92,6 +109,16 @@ jobs:
           sudo apt-get install -y xvfb libnss3 libasound2t64
           pip install playwright==1.55.0
           playwright install --with-deps chromium
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: recurrence-dependency-lock
+          path: recurrence/
+      - name: Locked official model runtime
+        working-directory: recurrence
+        run: npm ci --ignore-scripts
       - name: Official Paca integration
         run: |
           printf 'package buildinfo\nfunc init() { SourceSHA = "%s" }\n' "$GITHUB_SHA" > internal/buildinfo/stamp.go
@@ -126,6 +153,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: recurrence-dependency-lock
+          path: recurrence/
       - name: Worker image
         id: image
         uses: docker/build-push-action@v6
