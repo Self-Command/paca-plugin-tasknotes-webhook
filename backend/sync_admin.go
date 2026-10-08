@@ -30,6 +30,13 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 	if body.Reverse == nil {
 		raw = []byte("{}")
 	}
+	if body.Mode == "enabled" {
+		ready, checkErr := p.db.Query("SELECT EXISTS(SELECT 1 FROM sync_scan_state s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND s.last_complete IS NOT NULL AND s.last_error='') AND NOT EXISTS(SELECT 1 FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2 AND NOT o.deleted AND o.last_error<>'')", req.PathParam("id"), req.PathParam("projectId"))
+		if checkErr != nil || len(ready.Rows) != 1 || fmt.Sprint(ready.Rows[0][0]) != "true" {
+			res.Error(409, "请先完成任务清单和状态对应检查。")
+			return
+		}
+	}
 	changed, err := p.db.Exec("UPDATE connections SET sync_mode=$1,vault_id=COALESCE(NULLIF($2,''),vault_id),reverse_status_map=$3::jsonb,revision=revision+1 WHERE project_id=$4 AND id=$5 AND revision=$6", body.Mode, body.Vault, string(raw), req.PathParam("projectId"), req.PathParam("id"), body.Revision)
 	if err != nil {
 		res.Error(503, "同步设置暂时无法保存。")
@@ -40,6 +47,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 		return
 	}
 	p.audit(req, "sync.configuration.updated", req.PathParam("id"))
+	_, _ = p.db.Exec("INSERT INTO sync_dirty(project_id) VALUES($1) ON CONFLICT(project_id) DO UPDATE SET updated_at=NOW()", req.PathParam("projectId"))
 	res.JSON(200, map[string]any{"revision": body.Revision + 1, "mode": body.Mode})
 }
 func (p *integrationPlugin) syncPreview(req *plugin.Request, res *plugin.Response) {
