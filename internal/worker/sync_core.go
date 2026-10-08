@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasknotes"
 	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
 	"github.com/jackc/pgx/v5"
@@ -181,7 +182,7 @@ func (w *Worker) scanSync(ctx context.Context, id string) error {
 		}
 		route := "/projects/" + c.Project + "/tasks?page_size=200"
 		if cursor != "" {
-			route += "&cursor=" + cursor
+			route += "&cursor=" + url.QueryEscape(cursor)
 		}
 		if err = w.call(ctx, "GET", route, nil, &list); err != nil {
 			return err
@@ -264,6 +265,7 @@ func (w *Worker) acceptNative(ctx context.Context, c syncConfig, native nativeTa
 	if aliases == nil {
 		aliases = []byte("[]")
 	}
+	sourcePath, sourceBirth := path, birth
 	_, err = tx.Exec(ctx, "INSERT INTO sync_objects(id,connection_id,paca_task_id,source_id,source_ref,path,note_created,path_aliases,binding_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) ON CONFLICT(connection_id,paca_task_id) DO NOTHING", identity, c.ID, native.ID, sourceID, ref, path, birth, string(aliases), func() string {
 		if path != "" {
 			return "bound"
@@ -282,6 +284,11 @@ func (w *Worker) acceptNative(ctx context.Context, c syncConfig, native nativeTa
 		return err
 	}
 	before := tasksync.Snapshot{}
+	pathChanged := sourceID != nil && sourcePath != "" && (sourcePath != path || sourceBirth != birth)
+	if pathChanged {
+		path = sourcePath
+		birth = sourceBirth
+	}
 	_ = json.Unmarshal(raw, &before)
 	if len(before) == 0 && previous != nil {
 		_ = json.Unmarshal(previous, &before)
@@ -289,8 +296,9 @@ func (w *Worker) acceptNative(ctx context.Context, c syncConfig, native nativeTa
 	snapshot, warnings := nativeSnapshot(native, c, before)
 	if deleted {
 		snapshot = before
+		warnings = nil
 	}
-	if wasDeleted == deleted && tasksync.Equal(snapshot, before) && len(raw) > 2 {
+	if wasDeleted == deleted && !pathChanged && tasksync.Equal(snapshot, before) && len(raw) > 2 {
 		return tx.Commit(ctx)
 	}
 	if len(raw) > 2 {
@@ -305,7 +313,7 @@ func (w *Worker) acceptNative(ctx context.Context, c syncConfig, native nativeTa
 	if date, ok := snapshot["occurrence_date"].(string); ok && date != "" {
 		kind = "occurrence"
 	}
-	_, err = tx.Exec(ctx, "UPDATE sync_objects SET snapshot=$2::jsonb,paca_snapshot=$3::jsonb,revision=$4,deleted=$5,kind=$6,last_error=$7,updated_at=NOW() WHERE id=$1", currentID, string(snapshotRaw), string(nativeRaw), revision, deleted, kind, strings.Join(warnings, " "))
+	_, err = tx.Exec(ctx, "UPDATE sync_objects SET snapshot=$2::jsonb,paca_snapshot=$3::jsonb,revision=$4,deleted=$5,kind=$6,last_error=$7,path=$8,note_created=$9,source_id=COALESCE($10,source_id),path_aliases=$11::jsonb,updated_at=NOW() WHERE id=$1", currentID, string(snapshotRaw), string(nativeRaw), revision, deleted, kind, strings.Join(warnings, " "), path, birth, sourceID, string(aliases))
 	if err != nil {
 		return err
 	}
