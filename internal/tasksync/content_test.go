@@ -33,7 +33,10 @@ func TestUnknownRichBlockIsNotSilentlyDropped(t *testing.T) {
 }
 
 func TestLinksTablesNumberedAndNestedListRoundTrip(t *testing.T) {
- body := "## 文档\n1. [说明](https://example.org)\n2. 第二项\n- 父项\n  - 子项\n| 字段 | 内容 |\n| --- | --- |\n| 时间 | 九点 |"
- raw,_:=json.Marshal(Blocks(body));got,err:=Markdown(raw)
- if err!=nil||got!=body {t.Fatalf("rich Markdown changed: %q %v",got,err)}
+	body := "## 文档\n1. [说明](https://example.org)\n2. 第二项\n- 父项\n  - 子项\n| 字段 | 内容 |\n| --- | --- |\n| 时间 | 九点 |"
+	raw, _ := json.Marshal(Blocks(body))
+	got, err := Markdown(raw)
+	if err != nil || got != body {
+		t.Fatalf("rich Markdown changed: %q %v", got, err)
+	}
 }

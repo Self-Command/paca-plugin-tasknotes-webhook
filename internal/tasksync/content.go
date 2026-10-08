@@ -141,7 +141,9 @@ func blockLines(blocks []any, depth int) (string, error) {
 				text = "- " + text
 			case "numberedListItem":
 				number := intNumber(props["start"])
-				if number < 1 { number = index+1 }
+				if number < 1 {
+					number = index + 1
+				}
 				text = strconv.Itoa(number) + ". " + text
 			case "checkListItem":
 				checked, _ := props["checked"].(bool)
@@ -182,46 +184,112 @@ func intNumber(v any) int {
 	}
 }
 func richInline(text string) []any {
- out := []any{}
- for len(text)>0 {
-  match := regexp.MustCompile(`\[([^\]]+)\]\(([^\s)]+)\)`).FindStringSubmatchIndex(text)
-  begin,chosen := -1,""
-  for _,mark:=range []string{"**","~~",string(rune(96)),"*"} { if p:=strings.Index(text,mark);p>=0&&(begin<0||p<begin) {begin,chosen=p,mark} }
-  if len(match)>0 && (begin<0 || match[0]<begin) {
-   if match[0]>0 {out=append(out,richInline(text[:match[0]])...)}
-   out=append(out,map[string]any{"type":"link","href":text[match[4]:match[5]],"content":richInline(text[match[2]:match[3]])})
-   text=text[match[1]:];continue
-  }
-  if begin<0 {out=append(out,map[string]any{"type":"text","text":text,"styles":map[string]any{}});break}
-  stop:=strings.Index(text[begin+len(chosen):],chosen)
-  if stop<=0 {out=append(out,map[string]any{"type":"text","text":text,"styles":map[string]any{}});break}
-  if begin>0 {out=append(out,map[string]any{"type":"text","text":text[:begin],"styles":map[string]any{}})}
-  key:=map[string]string{"**":"bold","~~":"strike","*":"italic",string(rune(96)):"code"}[chosen]
-  styled:=[]any{map[string]any{"type":"text","text":text[begin+len(chosen):begin+len(chosen)+stop],"styles":map[string]any{}}}
-  if key!="code" {styled=richInline(text[begin+len(chosen):begin+len(chosen)+stop])}
-  for _,value:=range styled {if item,ok:=value.(map[string]any);ok&&item["type"]=="text" {item["styles"].(map[string]any)[key]=true}}
-  out=append(out,styled...);text=text[begin+2*len(chosen)+stop:]
- }
- return out
+	out := []any{}
+	for len(text) > 0 {
+		match := regexp.MustCompile(`\[([^\]]+)\]\(([^\s)]+)\)`).FindStringSubmatchIndex(text)
+		begin, chosen := -1, ""
+		for _, mark := range []string{"**", "~~", string(rune(96)), "*"} {
+			if p := strings.Index(text, mark); p >= 0 && (begin < 0 || p < begin) {
+				begin, chosen = p, mark
+			}
+		}
+		if len(match) > 0 && (begin < 0 || match[0] < begin) {
+			if match[0] > 0 {
+				out = append(out, richInline(text[:match[0]])...)
+			}
+			out = append(out, map[string]any{"type": "link", "href": text[match[4]:match[5]], "content": richInline(text[match[2]:match[3]])})
+			text = text[match[1]:]
+			continue
+		}
+		if begin < 0 {
+			out = append(out, map[string]any{"type": "text", "text": text, "styles": map[string]any{}})
+			break
+		}
+		stop := strings.Index(text[begin+len(chosen):], chosen)
+		if stop <= 0 {
+			out = append(out, map[string]any{"type": "text", "text": text, "styles": map[string]any{}})
+			break
+		}
+		if begin > 0 {
+			out = append(out, map[string]any{"type": "text", "text": text[:begin], "styles": map[string]any{}})
+		}
+		key := map[string]string{"**": "bold", "~~": "strike", "*": "italic", string(rune(96)): "code"}[chosen]
+		styled := []any{map[string]any{"type": "text", "text": text[begin+len(chosen) : begin+len(chosen)+stop], "styles": map[string]any{}}}
+		if key != "code" {
+			styled = richInline(text[begin+len(chosen) : begin+len(chosen)+stop])
+		}
+		for _, value := range styled {
+			if item, ok := value.(map[string]any); ok && item["type"] == "text" {
+				item["styles"].(map[string]any)[key] = true
+			}
+		}
+		out = append(out, styled...)
+		text = text[begin+2*len(chosen)+stop:]
+	}
+	return out
 }
 func tableCells(line string) []string {
- line=strings.TrimSpace(line);line=strings.TrimPrefix(line,"|");line=strings.TrimSuffix(line,"|")
- cells:=[]string{};var b strings.Builder;escaped:=false
- for _,r:=range line {if escaped {b.WriteRune(r);escaped=false;continue};if r=='\\' {escaped=true;continue};if r=='|' {cells=append(cells,strings.TrimSpace(b.String()));b.Reset()} else {b.WriteRune(r)}}
- cells=append(cells,strings.TrimSpace(b.String()));return cells
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "|")
+	line = strings.TrimSuffix(line, "|")
+	cells := []string{}
+	var b strings.Builder
+	escaped := false
+	for _, r := range line {
+		if escaped {
+			b.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '|' {
+			cells = append(cells, strings.TrimSpace(b.String()))
+			b.Reset()
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	cells = append(cells, strings.TrimSpace(b.String()))
+	return cells
 }
-func Blocks(markdown string) []any { return buildBlocks(markdown,0) }
-func buildBlocks(markdown string,depth int) []any {
- if depth>12 {return []any{map[string]any{"type":"paragraph","props":map[string]any{},"content":[]any{map[string]any{"type":"text","text":markdown,"styles":map[string]any{}}},"children":[]any{}}}}
+func Blocks(markdown string) []any { return buildBlocks(markdown, 0) }
+func buildBlocks(markdown string, depth int) []any {
+	if depth > 12 {
+		return []any{map[string]any{"type": "paragraph", "props": map[string]any{}, "content": []any{map[string]any{"type": "text", "text": markdown, "styles": map[string]any{}}}, "children": []any{}}}
+	}
 	blocks := []any{}
 	lines := strings.Split(TaskBody(markdown), "\n")
 	fence := strings.Repeat(string(rune(96)), 3)
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
-		if i+1<len(lines) && strings.HasPrefix(strings.TrimSpace(line),"|") && regexp.MustCompile(`^\s*\|?\s*:?-{3,}:?\s*\|`).MatchString(lines[i+1]) {
-			rows:=[]any{};width:=len(tableCells(line));first:=i;
-			for j:=i;j<len(lines);j++ {if j==first+1 {i=j;continue};if !strings.HasPrefix(strings.TrimSpace(lines[j]),"|") {break};cells:=tableCells(lines[j]);if len(cells)!=width {break};values:=[]any{};for _,cell:=range cells {values=append(values,richInline(cell))};rows=append(rows,map[string]any{"cells":values});i=j}
-			blocks=append(blocks,map[string]any{"type":"table","props":map[string]any{},"content":map[string]any{"type":"tableContent","rows":rows},"children":[]any{}});continue
+		if i+1 < len(lines) && strings.HasPrefix(strings.TrimSpace(line), "|") && regexp.MustCompile(`^\s*\|?\s*:?-{3,}:?\s*\|`).MatchString(lines[i+1]) {
+			rows := []any{}
+			width := len(tableCells(line))
+			first := i
+			for j := i; j < len(lines); j++ {
+				if j == first+1 {
+					i = j
+					continue
+				}
+				if !strings.HasPrefix(strings.TrimSpace(lines[j]), "|") {
+					break
+				}
+				cells := tableCells(lines[j])
+				if len(cells) != width {
+					break
+				}
+				values := []any{}
+				for _, cell := range cells {
+					values = append(values, richInline(cell))
+				}
+				rows = append(rows, map[string]any{"cells": values})
+				i = j
+			}
+			blocks = append(blocks, map[string]any{"type": "table", "props": map[string]any{}, "content": map[string]any{"type": "tableContent", "rows": rows}, "children": []any{}})
+			continue
 		}
 		kind := "paragraph"
 		props := map[string]any{}
@@ -245,8 +313,10 @@ func buildBlocks(markdown string,depth int) []any {
 			kind = "checkListItem"
 			props["checked"] = strings.HasPrefix(line, "- [x]")
 			content = line[6:]
-		} else if match:=regexp.MustCompile(`^(\d+)\. (.*)$`).FindStringSubmatch(line);len(match)>0 {
-			kind="numberedListItem";props["start"],_=strconv.Atoi(match[1]);content=match[2]
+		} else if match := regexp.MustCompile(`^(\d+)\. (.*)$`).FindStringSubmatch(line); len(match) > 0 {
+			kind = "numberedListItem"
+			props["start"], _ = strconv.Atoi(match[1])
+			content = match[2]
 		} else if strings.HasPrefix(line, "- ") {
 			kind = "bulletListItem"
 			content = line[2:]
@@ -258,13 +328,18 @@ func buildBlocks(markdown string,depth int) []any {
 		if kind == "codeBlock" {
 			inline = []any{map[string]any{"type": "text", "text": content, "styles": map[string]any{}}}
 		}
-		children:=[]any{}
-  if kind=="bulletListItem"||kind=="numberedListItem"||kind=="checkListItem" {
-   nested:=[]string{}
-   for i+1<len(lines)&&(strings.HasPrefix(lines[i+1],"  ")||strings.HasPrefix(lines[i+1],"\t")) {i++;nested=append(nested,strings.TrimPrefix(strings.TrimPrefix(lines[i],"  "),"\t"))}
-   if len(nested)>0 {children=buildBlocks(strings.Join(nested,"\n"),depth+1)}
-  }
-  blocks = append(blocks, map[string]any{"type": kind, "props": props, "content": inline, "children": children})
+		children := []any{}
+		if kind == "bulletListItem" || kind == "numberedListItem" || kind == "checkListItem" {
+			nested := []string{}
+			for i+1 < len(lines) && (strings.HasPrefix(lines[i+1], "  ") || strings.HasPrefix(lines[i+1], "\t")) {
+				i++
+				nested = append(nested, strings.TrimPrefix(strings.TrimPrefix(lines[i], "  "), "\t"))
+			}
+			if len(nested) > 0 {
+				children = buildBlocks(strings.Join(nested, "\n"), depth+1)
+			}
+		}
+		blocks = append(blocks, map[string]any{"type": kind, "props": props, "content": inline, "children": children})
 	}
 	return blocks
 }
