@@ -643,8 +643,12 @@ func (w *Worker) payload(ctx context.Context, c connection, e tasknotes.Envelope
 	}
 	metadata := map[string]any{"version": 2, "source": "tasknotes", "archived": t.Archived, "recurring": t.Recurring(), "occurrence_date": t.OccurrenceDate, "recurrence_parent": t.Parent, "timezone": c.Timezone, "start_precision": start.Precision, "due_precision": due.Precision, "start_instant": start.Value, "due_instant": due.Value, "start_core_date": startDay, "due_core_date": dueDay, "start_source": t.Scheduled, "due_source": t.Due}
 	custom := map[string]any{}
-	for key,value:=range current.Custom {custom[key]=value}
-	if t.Parent!="" && t.OccurrenceDate!="" {custom["_task_sync_v1"]=map[string]any{"recurrence_parent":t.Parent,"occurrence_date":t.OccurrenceDate}}
+	for key, value := range current.Custom {
+		custom[key] = value
+	}
+	if t.Parent != "" && t.OccurrenceDate != "" {
+		custom["_task_sync_v1"] = map[string]any{"recurrence_parent": t.Parent, "occurrence_date": t.OccurrenceDate}
+	}
 	custom["_integration_ref_v1"] = s.Ref
 	custom["_integration_state_v1"] = metadata
 	payload := map[string]any{"title": title, "start_date": startCore, "due_date": dueCore, "importance": priority, "tags": tags, "custom_fields": custom}
