@@ -137,6 +137,13 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		return err
 	}
 	defer conn.Exec(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1,0))", c.ID)
+	var canonical *string
+	if err = w.Pool.QueryRow(ctx, "SELECT canonical_id::text FROM sync_objects WHERE id=$1 AND connection_id=$2", op.SyncID, c.ID).Scan(&canonical); err != nil {
+		return err
+	}
+	if canonical != nil {
+		op.SyncID = *canonical
+	}
 	var task, ref string
 	var revision int64
 	var beforeRaw []byte
@@ -160,6 +167,9 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 			}
 			var associated string
 			if err = w.Pool.QueryRow(ctx, "SELECT id::text FROM sync_objects WHERE connection_id=$1 AND paca_task_id=$2", c.ID, existing).Scan(&associated); err != nil {
+				return err
+			}
+			if _, err = w.Pool.Exec(ctx, "UPDATE sync_objects SET canonical_id=$2 WHERE id=$1", op.SyncID, associated); err != nil {
 				return err
 			}
 			return w.syncOpDone(ctx, id, "superseded", map[string]any{"sync_id": associated, "task_id": existing}, "")

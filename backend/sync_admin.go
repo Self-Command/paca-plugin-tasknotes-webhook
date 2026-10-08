@@ -21,7 +21,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 		return
 	}
 	for id, value := range body.Reverse {
-		if !uuidPattern.MatchString(id) || value == "" || len(value) > 100 {
+		if (!uuidPattern.MatchString(id) && id != "@none") || value == "" || len(value) > 100 {
 			res.Error(400, "请检查状态映射。")
 			return
 		}

@@ -43,7 +43,7 @@ def submit(item,changes,kind='update',expected=202):
     return op
 
 sync_config('preview')
-native=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'Paca 页面和 AI 共用的创建接口','tags':['同步测试']},201)['data']
+native=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'Paca 页面和 AI 共用的创建接口','status_id':sync_mapping['open'],'tags':['同步测试']},201)['data']
 proxy=ThreadingHTTPServer(('127.0.0.1',18182),Proxy)
 threading.Thread(target=proxy.serve_forever,daemon=True).start()
 sync_env={**worker_env,'PACA_API_URL':'http://127.0.0.1:18182','LISTEN_ADDR':'127.0.0.1:18092'}
@@ -60,6 +60,7 @@ try:
     assert sync_request('GET','/changes?after=0')['items']==[],'Preview changed a vault before confirmation'
     sync_config('enabled')
     original=sync_item(native['id'])
+    assert original['snapshot']['status']=='open',original
     assert original['snapshot']['scheduled'] is None
     sync_request('GET','/info',token='0'*64,expected=401)
     sync_request('POST','/bindings',{'sync_id':'invalid','action':'claim'},400)
@@ -131,5 +132,7 @@ try:
     request('PATCH',f'/admin/plugins/{installed["id"]}',{'enabled':True})
     (verification/'task-sync-report.json').write_text(json.dumps({'official_paca':'0.18.6','initial_preview':True,'native_create_exported':True,'project_scope':True,'creation_lease_not_stolen':True,'actual_write_ack':True,'different_fields_merged':True,'same_field_conflict':True,'operation_idempotent':True,'precise_time_preserved':True,'unmapped_custom_fields_preserved':True,'archive_unarchive':True,'lost_create_response_one_task':True,'native_delete_tombstone':True,'obsidian_delete_core':True,'durable_restart':True,'plugin_disable_pauses_sync':True},ensure_ascii=False,indent=2))
 finally:
+    try:(verification/'task-sync-diagnostic.json').write_text(json.dumps({'preview':request('GET',sync_admin+'/sync-preview'),'changes':feed(),'operations':sync_request('GET','/conflicts')},ensure_ascii=False,indent=2))
+    except Exception:pass
     sync_process.terminate();sync_process.wait(timeout=10)
     sync_log.close();proxy.shutdown();proxy.server_close()

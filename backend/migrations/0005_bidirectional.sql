@@ -24,4 +24,5 @@ CREATE TABLE sync_dirty(project_id UUID PRIMARY KEY,updated_at TIMESTAMPTZ NOT N
 ALTER TABLE sync_operations ADD COLUMN inbox_id BIGINT REFERENCES inbox(id);
 ALTER TABLE sync_receipts ADD COLUMN fields JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE sync_receipts ADD COLUMN actual JSONB;
+ALTER TABLE sync_objects ADD COLUMN canonical_id UUID REFERENCES sync_objects(id);
 UPDATE plugin_metadata SET version=5 WHERE id=1;

@@ -66,6 +66,9 @@ func nativeSnapshot(t nativeTask, c syncConfig, previous tasksync.Snapshot) (tas
 		warnings = append(warnings, "任务内容包含暂不支持的格式，原始内容已保留。")
 	}
 	state := c.Reverse[t.Status]
+	if t.Status == "" {
+		state = c.Reverse["@none"]
+	}
 	if state == "" {
 		keys := []string{}
 		for key, id := range c.Statuses {
@@ -104,6 +107,9 @@ func nativeSnapshot(t nativeTask, c syncConfig, previous tasksync.Snapshot) (tas
 		}
 	}
 	out["priority"] = priority
+	if t.Importance == 0 {
+		out["priority"] = "normal"
+	}
 	meta, _ := t.Custom["_integration_state_v1"].(map[string]any)
 	for _, field := range []struct {
 		name, prefix string
