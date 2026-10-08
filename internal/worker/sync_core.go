@@ -373,7 +373,8 @@ func nativePatch(snapshot, changes tasksync.Snapshot, c syncConfig, current nati
 	}
 	meta["version"] = 2
 	meta["source"] = "task-sync"
-	meta["timezone"] = c.Timezone
+	zone, _ := meta["timezone"].(string)
+ if zone==""{zone=c.Timezone};meta["timezone"] = zone
 	meta["archived"] = snapshot["archived"]
 	rule, recurring := snapshot["recurrence"].(string)
 	seriesParent := meta["series_parent"] == true || recurring && rule != ""
@@ -387,11 +388,11 @@ func nativePatch(snapshot, changes tasksync.Snapshot, c syncConfig, current nati
 	for _, f := range []struct{ field, prefix, native string }{{"scheduled", "start", "start_date"}, {"due", "due", "due_date"}} {
 		if _, changed := changes[f.field]; changed {
 			raw, _ := snapshot[f.field].(string)
-			date, err := tasknotes.ParseDate(raw, c.Timezone)
+			date, err := tasknotes.ParseDate(raw, zone)
 			if err != nil {
 				return nil, err
 			}
-			core, day, err := tasknotes.CoreDate(date, c.Timezone)
+			core, day, err := tasknotes.CoreDate(date, zone)
 			if err != nil {
 				return nil, err
 			}

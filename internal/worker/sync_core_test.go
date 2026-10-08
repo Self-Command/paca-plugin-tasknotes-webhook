@@ -83,3 +83,11 @@ func TestStoppedSeriesParentRemainsUnscheduled(t *testing.T) {
 		t.Fatal("an individual period was suppressed as a parent")
 	}
 }
+
+func TestNativePatchKeepsTaskTimezoneOnUnrelatedEdits(t *testing.T){
+ c:=syncConfig{Timezone:"Asia/Shanghai"}
+ current:=nativeTask{Custom:map[string]any{"_integration_state_v1":map[string]any{"timezone":"America/New_York","reminder_start_minutes":20}}}
+ patch,err:=nativePatch(tasksync.Snapshot{"title":"标题"},tasksync.Snapshot{"title":"标题"},c,current,"sync:task");if err!=nil{t.Fatal(err)}
+ meta:=patch["custom_fields"].(map[string]any)["_integration_state_v1"].(map[string]any)
+ if meta["timezone"]!="America/New_York"||meta["reminder_start_minutes"]!=20{t.Fatal("unrelated edit changed shared time",meta)}
+}
