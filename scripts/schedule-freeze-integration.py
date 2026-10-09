@@ -26,6 +26,16 @@ try:
     for _ in range(100):
         try:sync_request('GET','/info');break
         except OSError:time.sleep(.2)
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch();context=browser.new_context(viewport={'width':390,'height':844})
+        assert context.request.post('http://127.0.0.1:18081/api/v1/auth/login',data={'username':'admin','password':new_password}).ok
+        page=context.new_page();page.goto(f'http://127.0.0.1:18081/projects/{sync_project["id"]}/tasks/{guard_task}',wait_until='domcontentloaded')
+        message=page.get_by_text('此任务为一次性任务，不会自动重复。',exact=True);expect(message).to_be_visible(timeout=30000)
+        page.get_by_role('button',name='设置重复计划',exact=True).click()
+        expect(page.get_by_label('首次开始时间',exact=True)).to_have_count(0)
+        expect(page.get_by_label('首次结束时间',exact=True)).to_have_count(0)
+        page.screenshot(path=str(verification/'ordinary-repeat-ui.png'),full_page=True)
+        context.close();browser.close()
     old_core=request('GET',f'/projects/{sync_project["id"]}/tasks/{guard_task}')['data']
     alternate={'connection_id':sync_connection_id,'revision':guard_item['revision'],'op_id':str(uuid.uuid4()),'recurrence':'','recurrence_anchor':'scheduled','scheduled':start+'T15:30:00','due':start+'T16:00:00'}
     route=f'/plugins/{plugin_id}/projects/{sync_project["id"]}/tasks/{guard_task}/recurrence'
