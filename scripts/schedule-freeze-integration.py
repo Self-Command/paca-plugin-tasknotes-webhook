@@ -20,7 +20,8 @@ wait_operation(initial);guard_item=sync_item(guard_task)
 probe=ThreadingHTTPServer(('127.0.0.1',18183),FreezeProbe)
 threading.Thread(target=probe.serve_forever,daemon=True).start()
 sync_process.terminate();sync_process.wait(timeout=10)
-sync_env={**sync_env,'CHECKIN_WORKER_URL':'http://127.0.0.1:18183','CHECKIN_SERVICE_SECRET':'a'*64}
+freeze_secret=pathlib.Path('/tmp/freeze-probe-secret');freeze_secret.write_text('a'*64);freeze_secret.chmod(0o600)
+sync_env={**sync_env,'CHECKIN_WORKER_URL':'http://127.0.0.1:18183','CHECKIN_SERVICE_SECRET_FILE':str(freeze_secret)}
 sync_process=subprocess.Popen(['/tmp/tasknotes-worker'],env=sync_env,stdout=sync_log,stderr=sync_log)
 try:
     for _ in range(100):
@@ -50,5 +51,6 @@ try:
 finally:
     sync_process.terminate();sync_process.wait(timeout=10)
     probe.shutdown();probe.server_close()
-    sync_env.pop('CHECKIN_WORKER_URL',None);sync_env.pop('CHECKIN_SERVICE_SECRET',None)
+    sync_env.pop('CHECKIN_WORKER_URL',None);sync_env.pop('CHECKIN_SERVICE_SECRET_FILE',None)
+    freeze_secret.unlink(missing_ok=True)
     sync_process=subprocess.Popen(['/tmp/tasknotes-worker'],env=sync_env,stdout=sync_log,stderr=sync_log)
