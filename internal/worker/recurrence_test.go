@@ -2,11 +2,11 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"errors"
-	"github.com/Self-Command/paca-plugin-tasknotes-webhook/internal/tasksync"
 )
 
 func TestPeriodFreezeMustBeExplicitAndScoped(t *testing.T) {
@@ -47,21 +47,31 @@ func TestParentReferenceRequiresPathNotTitleGuess(t *testing.T) {
 }
 
 func TestEveryScheduleEntryChecksFrozenTime(t *testing.T) {
- calls := 0
- server := httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
-  calls++
-  if r.URL.Path != "/internal/v1/times/freeze" { t.Error("freeze probe must not create an instance") }
-  out.Write([]byte(`{"enabled":true,"frozen":true}`))
- }))
- defer server.Close()
- w := Worker{CheckinURL:server.URL, CheckinSecret:"service", HTTP:server.Client()}
- base := tasksync.Snapshot{"scheduled":"2026-10-09T08:33", "due":"2026-10-09T08:53", "recurrence":nil}
- for _, field := range []string{"scheduled","due","recurrence","recurrence_anchor"} {
-  next := tasksync.Snapshot{}
-  for k,v := range base { next[k] = v }
-  next[field] = "changed"
-  if !errors.Is(w.guardScheduleChange(context.Background(), syncConfig{connection:connection{Project:"project"}}, "task", base, next),errScheduleFrozen) { t.Fatal("frozen entry accepted",field) }
- }
- if err := w.guardScheduleChange(context.Background(),syncConfig{connection:connection{Project:"project"}},"task",base,base); err != nil { t.Fatal(err) }
- if calls != 4 { t.Fatal("unchanged writes must not probe or mutate check-in",calls) }
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/internal/v1/times/freeze" {
+			t.Error("freeze probe must not create an instance")
+		}
+		out.Write([]byte(`{"enabled":true,"frozen":true}`))
+	}))
+	defer server.Close()
+	w := Worker{CheckinURL: server.URL, CheckinSecret: "service", HTTP: server.Client()}
+	base := tasksync.Snapshot{"scheduled": "2026-10-09T08:33", "due": "2026-10-09T08:53", "recurrence": nil}
+	for _, field := range []string{"scheduled", "due", "recurrence", "recurrence_anchor"} {
+		next := tasksync.Snapshot{}
+		for k, v := range base {
+			next[k] = v
+		}
+		next[field] = "changed"
+		if !errors.Is(w.guardScheduleChange(context.Background(), syncConfig{connection: connection{Project: "project"}}, "task", base, next), errScheduleFrozen) {
+			t.Fatal("frozen entry accepted", field)
+		}
+	}
+	if err := w.guardScheduleChange(context.Background(), syncConfig{connection: connection{Project: "project"}}, "task", base, base); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 4 {
+		t.Fatal("unchanged writes must not probe or mutate check-in", calls)
+	}
 }
