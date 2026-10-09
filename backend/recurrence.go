@@ -37,7 +37,7 @@ func (p *integrationPlugin) setRecurrence(req *plugin.Request, res *plugin.Respo
 		OpID       string  `json:"op_id"`
 		Rule       string  `json:"recurrence"`
 		Anchor     string  `json:"recurrence_anchor"`
-		Scheduled  string  `json:"scheduled"`
+		Scheduled  *string `json:"scheduled,omitempty"`
 		Due        *string `json:"due"`
 	}](req)
 	if err != nil || !uuidPattern.MatchString(body.Connection) || body.Revision < 1 || len(body.OpID) < 8 || len(body.OpID) > 128 || len(body.Rule) > 2048 || (body.Anchor != "scheduled" && body.Anchor != "completion") {
@@ -73,7 +73,10 @@ func (p *integrationPlugin) setRecurrence(req *plugin.Request, res *plugin.Respo
 		res.Error(503, "任务设置暂时不可用。")
 		return
 	}
-	changes := tasksync.Snapshot{"recurrence": body.Rule, "recurrence_anchor": body.Anchor, "scheduled": body.Scheduled}
+	changes := tasksync.Snapshot{"recurrence": body.Rule, "recurrence_anchor": body.Anchor}
+	if body.Scheduled != nil {
+		changes["scheduled"] = *body.Scheduled
+	}
 	if body.Rule == "" {
 		changes["recurrence"] = nil
 		changes["recurrence_anchor"] = nil

@@ -290,6 +290,12 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 			return w.syncOpDone(ctx, id, "failed", map[string]any{}, modelErr.Error())
 		}
 	}
+	if err = w.guardScheduleChange(ctx, c, task, before, merged); err != nil {
+		if errors.Is(err, errScheduleFrozen) {
+			return w.syncOpDone(ctx, id, "conflict", map[string]any{"status_code": 409, "task_id": task}, err.Error())
+		}
+		return w.syncOpRetry(ctx, id, err)
+	}
 	payload, err := nativePatch(merged, patchChanges, c, current, ref)
 	if err != nil {
 		return w.syncOpDone(ctx, id, "failed", map[string]any{}, err.Error())

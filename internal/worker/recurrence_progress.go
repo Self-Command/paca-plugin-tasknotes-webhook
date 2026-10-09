@@ -17,7 +17,7 @@ func (w *Worker) periodFrozen(ctx context.Context, c syncConfig, task string) (b
 		return false, nil
 	}
 	raw, _ := json.Marshal(map[string]string{"project_id": c.Project, "task_id": task})
-	req, err := http.NewRequestWithContext(ctx, "POST", w.CheckinURL+"/internal/v1/task", bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, "POST", w.CheckinURL+"/internal/v1/times/freeze", bytes.NewReader(raw))
 	if err != nil {
 		return false, err
 	}
@@ -43,6 +43,20 @@ func (w *Worker) periodFrozen(ctx context.Context, c syncConfig, task string) (b
 	}
 	return *result.Frozen, nil
 }
+var errScheduleFrozen = errors.New("打卡窗口已开放，时间已冻结。请先取消当前打卡安排再修改。")
+
+func (w *Worker) guardScheduleChange(ctx context.Context, c syncConfig, task string, before, next tasksync.Snapshot) error {
+ changed := false
+ for _, field := range []string{"scheduled", "due", "recurrence", "recurrence_anchor"} {
+  if !tasksync.Equal(before[field], next[field]) { changed = true; break }
+ }
+ if !changed || task == "" { return nil }
+ frozen, err := w.periodFrozen(ctx, c, task)
+ if err != nil { return err }
+ if frozen { return errScheduleFrozen }
+ return nil
+}
+
 func includesDate(value any, date string) bool {
 	raw, _ := json.Marshal(value)
 	var items []string

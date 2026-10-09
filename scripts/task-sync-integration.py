@@ -158,6 +158,7 @@ try:
         time.sleep(.5)
     else:raise AssertionError('Unchanged deletion snapshot was misclassified as an echo')
     exec((ROOT/'scripts/recurrence-integration.py').read_text(),globals())
+    exec((ROOT/'scripts/schedule-freeze-integration.py').read_text(),globals())
     (verification/'task-sync-report.json').write_text(json.dumps({'official_paca':'0.18.6','initial_preview':True,'native_create_exported':True,'project_scope':True,'creation_lease_not_stolen':True,'actual_write_ack':True,'different_fields_merged':True,'same_field_conflict':True,'operation_idempotent':True,'precise_time_preserved':True,'unmapped_custom_fields_preserved':True,'archive_unarchive':True,'lost_create_response_one_task':True,'native_delete_tombstone':True,'obsidian_delete_core':True,'durable_restart':True,'plugin_disable_pauses_sync':True},ensure_ascii=False,indent=2))
 finally:
     try:(verification/'task-sync-diagnostic.json').write_text(json.dumps({'preview':request('GET',sync_admin+'/sync-preview'),'changes':feed(),'operations':sync_request('GET','/conflicts')},ensure_ascii=False,indent=2))

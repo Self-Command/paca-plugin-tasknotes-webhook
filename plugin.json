@@ -405,7 +405,7 @@
       {
         "point": "task.detail.section",
         "component": "TaskRecurrenceSection",
-        "label": "循环任务",
+        "label": "重复计划",
         "order": 111,
         "requiredPermission": "tasknotes_webhook.read"
       }
