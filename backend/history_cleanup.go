@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	plugin "github.com/Paca-AI/plugin-sdk-go"
+	"strings"
 	"time"
 )
 
@@ -31,7 +32,7 @@ const historyCandidates = `WITH scope AS (
 )`
 
 func (p *integrationPlugin) historyCleanupPreview(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query(historyCandidates+` SELECT (SELECT COUNT(*) FROM old_objects),(SELECT COUNT(*) FROM old_inbox),(SELECT COUNT(*) FROM old_sources),to_char(cutoff AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM scope`, req.PathParam("projectId"), req.PathParam("id"), "")
+	rows, err := p.db.Query("SELECT * FROM ("+historyCandidates+` SELECT (SELECT COUNT(*) FROM old_objects),(SELECT COUNT(*) FROM old_inbox),(SELECT COUNT(*) FROM old_sources),to_char(cutoff AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM scope) preview`, req.PathParam("projectId"), req.PathParam("id"), "")
 	if err != nil {
 		res.Error(503, "清理范围暂时无法读取。")
 		return
@@ -54,8 +55,16 @@ func (p *integrationPlugin) historyCleanup(req *plugin.Request, res *plugin.Resp
 		res.Error(400, "请先核对清理范围并确认。")
 		return
 	}
+	id, err := newUUID()
+	if err != nil {
+		res.Error(503, "旧历史暂时无法清理。")
+		return
+	}
 	// One statement makes all history changes atomic within this connection.
-	rows, err := p.db.Query(historyCandidates+`, cleared_objects AS (
+	locked := strings.Replace(historyCandidates, "), old_sources AS (", " FOR UPDATE OF o), old_sources AS (", 1)
+	locked = strings.Replace(locked, "), old_inbox AS (", " FOR UPDATE OF s), old_inbox AS (", 1)
+	locked = strings.TrimSuffix(locked, "\n)") + "\n FOR UPDATE OF i)"
+	n, err := p.db.Exec(locked+`, cleared_objects AS (
  UPDATE sync_objects o SET snapshot='{}',paca_snapshot='{}',path_aliases='[]',last_error='',history_cleared_at=NOW(),revision=o.revision+1
  FROM old_objects x WHERE o.id=x.id AND o.deleted AND o.updated_at<= (SELECT cutoff FROM scope)
  RETURNING o.id,o.connection_id,o.paca_task_id,o.revision,o.kind,o.path,o.note_created,o.source_ref
@@ -78,13 +87,19 @@ func (p *integrationPlugin) historyCleanup(req *plugin.Request, res *plugin.Resp
 ), cleared_receipts AS (
  UPDATE sync_receipts x SET expected='{}',actual=NULL,fields='[]' WHERE x.object_id IN(SELECT id FROM cleared_objects) AND x.state='confirmed' RETURNING x.id
 )
-SELECT (SELECT COUNT(*) FROM cleared_objects),(SELECT COUNT(*) FROM cleared_inbox),(SELECT COUNT(*) FROM cleared_sources) FROM scope`, req.PathParam("projectId"), req.PathParam("id"), body.Cutoff)
+INSERT INTO history_cleanups(id,connection_id,cutoff,deleted_tasks,processed_events,obsolete_sources)
+SELECT $4,id,cutoff,(SELECT COUNT(*) FROM cleared_objects),(SELECT COUNT(*) FROM cleared_inbox),(SELECT COUNT(*) FROM cleared_sources) FROM scope`, req.PathParam("projectId"), req.PathParam("id"), body.Cutoff, id)
 	if err != nil {
 		res.Error(503, "旧历史暂时无法清理，请重试。")
 		return
 	}
-	if len(rows.Rows) != 1 {
+	if n != 1 {
 		res.Error(404, "来源连接未找到。")
+		return
+	}
+	rows, err := p.db.Query("SELECT h.deleted_tasks,h.processed_events,h.obsolete_sources FROM history_cleanups h JOIN connections c ON c.id=h.connection_id WHERE h.id=$1 AND c.id=$2 AND c.project_id=$3", id, req.PathParam("id"), req.PathParam("projectId"))
+	if err != nil || len(rows.Rows) != 1 {
+		res.Error(503, "清理结果暂时无法读取，请刷新记录。")
 		return
 	}
 	r := rows.Rows[0]

@@ -58,7 +58,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 	res.JSON(200, map[string]any{"revision": body.Revision + 1, "mode": body.Mode})
 }
 func (p *integrationPlugin) syncPreview(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("WITH ranked AS (SELECT o.*,c.sync_mode,ROW_NUMBER() OVER(PARTITION BY o.deleted ORDER BY o.updated_at,o.id) AS n FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND c.id=$2 AND (NOT o.deleted OR o.history_cleared_at IS NULL)) SELECT id::text,paca_task_id::text,revision,snapshot::text,path,deleted,last_error,sync_mode FROM ranked WHERE n<=200 ORDER BY deleted,n", req.PathParam("projectId"), req.PathParam("id"))
+	rows, err := p.db.Query("SELECT id::text,paca_task_id::text,revision,snapshot::text,path,deleted,last_error,sync_mode FROM (SELECT o.*,c.sync_mode,ROW_NUMBER() OVER(PARTITION BY o.deleted ORDER BY o.updated_at,o.id) AS n FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND c.id=$2 AND (NOT o.deleted OR o.history_cleared_at IS NULL)) ranked WHERE n<=200 ORDER BY deleted,n", req.PathParam("projectId"), req.PathParam("id"))
 	if err != nil {
 		res.Error(503, "任务清单暂时无法读取。")
 		return
