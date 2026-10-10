@@ -393,6 +393,25 @@
             ]
           }
         ]
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/connections/:id/note-bindings",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
       }
     ],
     "sensitiveFields": {

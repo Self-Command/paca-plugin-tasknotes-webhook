@@ -30,3 +30,16 @@ func (p *integrationPlugin) sourceStatus(req *plugin.Request, res *plugin.Respon
 	}
 	res.JSON(200, map[string]any{"state": state, "connection_id": r[0], "source_ref": r[1], "path": r[3], "task_id": req.PathParam("taskId")})
 }
+
+func (p *integrationPlugin) noteBindings(req *plugin.Request, res *plugin.Response) {
+	rows, err := p.db.Query("SELECT o.path,o.note_created,COALESCE(o.snapshot->>'title','任务笔记') FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND c.id=$2 AND NOT o.deleted AND o.canonical_id IS NULL AND o.path<>'' AND o.note_created<>'' ORDER BY o.path", req.PathParam("projectId"), req.PathParam("id"))
+	if err != nil {
+		res.Error(503, "任务笔记暂不可用。")
+		return
+	}
+	items := []any{}
+	for _, r := range rows.Rows {
+		items = append(items, map[string]any{"path": r[0], "note_created": r[1], "title": r[2]})
+	}
+	res.JSON(200, map[string]any{"items": items})
+}
