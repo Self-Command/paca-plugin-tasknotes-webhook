@@ -23,7 +23,7 @@ func (p *integrationPlugin) Init(ctx *plugin.Context) error {
 	ctx.Route("GET", "/projects/:projectId/status", p.status)
 	ctx.Route("GET", "/projects/:projectId/tasks/:taskId/source-link", p.sourceLink)
 	ctx.Route("GET", "/projects/:projectId/tasks/:taskId/source-status", p.sourceStatus)
-	ctx.Route("GET", "/projects/:projectId/tasks/:taskId/source-status", p.sourceStatus)
+	ctx.Route("GET", "/projects/:projectId/connections/:id/note-bindings", p.noteBindings)
 	ctx.Route("GET", "/projects/:projectId/connections", p.connections)
 	ctx.Route("POST", "/projects/:projectId/connections", p.createConnection)
 	ctx.Route("PATCH", "/projects/:projectId/connections/:id", p.updateConnection)
