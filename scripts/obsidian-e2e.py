@@ -88,6 +88,7 @@ try:
         try:
             ui_page.wait_for_function('()=>Boolean(window.app?.plugins?.plugins?.tasknotes?.cacheManager)',timeout=60000)
             ui_page.locator('.modal').filter(has_text='Do you trust the author of this vault?').wait_for(state='hidden',timeout=60000)
+            ui_page.wait_for_function('()=>Boolean(app.plugins.plugins.tasknotes.apiService?.isRunning())',timeout=60000)
         except Exception:
             save_diagnostic('obsidian-plugin-load-failure');raise
         for _ in range(3):ui_page.keyboard.press('Escape')
@@ -158,6 +159,8 @@ try:
     (ROOT/'verification/obsidian-report.json').write_text(json.dumps(report,indent=2))
 except Exception:
     if ui_page:
+        try:save_diagnostic('obsidian-ui-failure-detail')
+        except Exception:pass
         try:ui_page.screenshot(path=str(ROOT/'verification/obsidian-ui-failure.png'))
         except Exception:pass
     (ROOT/'verification/obsidian-ui-deliveries.json').write_text(json.dumps(received,indent=2))
