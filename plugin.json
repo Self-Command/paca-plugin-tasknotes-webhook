@@ -374,6 +374,25 @@
           }
         ],
         "path": "/projects/:projectId/tasks/:taskId/recurrence"
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/tasks/:taskId/source-status",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ]
+          }
+        ]
       }
     ],
     "sensitiveFields": {
