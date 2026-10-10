@@ -29,3 +29,6 @@
 .checkin-ui .sync-cleanup-counts li{display:flex;justify-content:space-between;gap:16px;padding:5px 0;font-size:14px}
 .checkin-ui .sync-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
 .checkin-ui .sync-dialog-actions button{min-height:44px}
+.sync-history-selection { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.sync-history-selection label,.sync-history-row-label { display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; }
+.sync-history-selection input,.sync-history-row-label input { width:20px; height:20px; flex-shrink:0; accent-color:var(--color-primary); }

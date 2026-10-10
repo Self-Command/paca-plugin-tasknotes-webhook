@@ -148,6 +148,9 @@ func (w *Worker) SyncTick(ctx context.Context) error {
 	if err := w.control(ctx); err != nil {
 		return err
 	}
+	if err := w.verifyLegacySource(ctx); err != nil {
+		return err
+	}
 	if err := w.applySyncOperation(ctx); err != nil {
 		return err
 	}

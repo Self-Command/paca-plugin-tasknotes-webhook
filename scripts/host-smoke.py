@@ -48,13 +48,13 @@ request('PATCH',f'/admin/plugins/{installed['id']}',{'enabled':False})
 cmd('docker','cp',str(current_package)+ '/.',f'paca-ci-api:/plugins/wasm/{plugin_id}/')
 request('PATCH',f'/admin/plugins/{installed['id']}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
 health=request('GET',f'/plugins/{plugin_id}/health')
-assert health['schema_version']==7 and health['id']==plugin_id
+assert health['schema_version']==8 and health['id']==plugin_id
 stamp=str(int(time.time()))
 nonce=secrets.token_hex(24)
 signature=hmac.new(worker_secret.encode(),f'GET\n/worker/control\n{stamp}\n{nonce}'.encode(),hashlib.sha256).hexdigest()
 worker_headers={'X-Worker-Timestamp':stamp,'X-Worker-Nonce':nonce,'X-Worker-Signature':signature}
 control=request('GET',f'/plugins/{plugin_id}/worker/control',headers=worker_headers)
-assert control['enabled'] and control['schema_version']==7
+assert control['enabled'] and control['schema_version']==8
 request('GET',f'/plugins/{plugin_id}/worker/control',expected=409,headers=worker_headers)
 request('GET',f'/plugins/{plugin_id}/worker/control',expected=401)
 project=request('POST','/projects',{'name':'Plugin baseline','task_id_prefix':'CI'},201)['data']
@@ -119,7 +119,7 @@ request('GET',f'/plugins/{plugin_id}/projects/{project["id"]}/tasks/{task["id"]}
 reload_path=f'/plugins/{plugin_id}/projects/{project["id"]}/connections/{connection_id}/sources'
 retained_sources=request('GET',reload_path)['items']
 request('PATCH',f'/admin/plugins/{installed["id"]}',{'manifest':manifest,'version':manifest['version'],'enabled':True})
-assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==7
+assert request('GET',f'/plugins/{plugin_id}/health')['schema_version']==8
 assert request('GET',reload_path)['items']==retained_sources,'Manifest reload changed source associations'
 verify_saved_secret(ui_secret)
 exec((ROOT/'scripts/task-sync-integration.py').read_text(),globals())

@@ -216,7 +216,7 @@ func (p *integrationPlugin) receive(req *plugin.Request, res *plugin.Response) {
 		return
 	}
 	hash := tasknotes.Hash(req.Body)
-	n, err := p.db.Exec("INSERT INTO inbox(connection_id,delivery_id,body,body_hash,event) VALUES($1,$2,$3::jsonb,$4,$5) ON CONFLICT(connection_id,delivery_id) DO NOTHING", id, delivery, string(req.Body), hash, e.Event)
+	n, err := p.db.Exec("INSERT INTO inbox(connection_id,delivery_id,body,body_hash,event,state,history_cleared_at) SELECT $1,$2,CASE WHEN old.cleared THEN '{}'::jsonb ELSE $3::jsonb END,$4,$5,CASE WHEN old.cleared THEN 'cleared' ELSE 'pending' END,CASE WHEN old.cleared THEN NOW() ELSE NULL END FROM (SELECT EXISTS(SELECT 1 FROM inbox WHERE connection_id=$1 AND body_hash=$4 AND history_cleared_at IS NOT NULL) AS cleared) old ON CONFLICT(connection_id,delivery_id) DO NOTHING", id, delivery, string(req.Body), hash, e.Event)
 	if err != nil {
 		res.Error(503, "event persistence failed; retry delivery")
 		return
@@ -238,14 +238,14 @@ func (p *integrationPlugin) receive(req *plugin.Request, res *plugin.Response) {
 	res.JSON(code, map[string]any{"id": r[0], "state": r[1], "duplicate": n == 0})
 }
 func (p *integrationPlugin) deliveries(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT i.id,i.delivery_id,i.event,i.state,i.error,i.attempts,i.received_at::text FROM inbox i JOIN connections c ON c.id=i.connection_id WHERE c.project_id=$1 AND c.id=$2 AND i.history_cleared_at IS NULL ORDER BY i.id DESC LIMIT 100", req.PathParam("projectId"), req.PathParam("id"))
+	rows, err := p.db.Query("SELECT i.id,i.delivery_id,i.event,i.state,i.error,i.attempts,i.received_at::text,COALESCE(i.body#>>'{data,task,path}',''),COALESCE(i.body#>>'{data,task,title}','') FROM inbox i JOIN connections c ON c.id=i.connection_id WHERE c.project_id=$1 AND c.id=$2 AND i.history_cleared_at IS NULL ORDER BY i.id DESC LIMIT 100", req.PathParam("projectId"), req.PathParam("id"))
 	if err != nil {
 		res.Error(503, "history unavailable")
 		return
 	}
 	items := []any{}
 	for _, r := range rows.Rows {
-		items = append(items, map[string]any{"id": r[0], "delivery_id": r[1], "event": r[2], "state": r[3], "error": r[4], "attempts": r[5], "received_at": r[6]})
+		items = append(items, map[string]any{"id": r[0], "delivery_id": r[1], "event": r[2], "state": r[3], "error": r[4], "attempts": r[5], "received_at": r[6],"path":r[7],"title":r[8]})
 	}
 	stats, statsErr := p.db.Query("SELECT COALESCE(s.signature_failures,0),s.last_signature_failure::text FROM connections c LEFT JOIN receiver_stats s ON s.connection_id=c.id WHERE c.id=$1 AND c.project_id=$2", req.PathParam("id"), req.PathParam("projectId"))
 	diagnostics := map[string]any{"signature_failures": 0}
@@ -269,16 +269,26 @@ func (p *integrationPlugin) reprocess(req *plugin.Request, res *plugin.Response)
 	res.JSON(200, map[string]any{"queued": true})
 }
 func (p *integrationPlugin) sources(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT s.id,COALESCE(s.snapshot->>'path',s.source_key),COALESCE(s.paca_task_id::text,''),CASE WHEN EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id) AND o.deleted) THEN 'deleted' ELSE s.state END,s.external_ref FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND s.history_cleared_at IS NULL ORDER BY s.id DESC LIMIT 100", req.PathParam("id"), req.PathParam("projectId"))
+	rows, err := p.db.Query("SELECT s.id,COALESCE(s.snapshot->>'path',s.source_key),COALESCE(s.paca_task_id::text,''),CASE WHEN NOT EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id) AND NOT o.deleted) AND EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id) AND o.deleted) THEN 'deleted' ELSE s.state END,s.external_ref,s.verified_at::text,s.verification_error FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND s.history_cleared_at IS NULL ORDER BY s.id DESC LIMIT 100", req.PathParam("id"), req.PathParam("projectId"))
 	if err != nil {
 		res.Error(503, "source associations unavailable")
 		return
 	}
 	items := []any{}
 	for _, r := range rows.Rows {
-		items = append(items, map[string]any{"id": r[0], "path": r[1], "task_id": r[2], "state": r[3], "external_ref": r[4]})
+		items = append(items, map[string]any{"id": r[0], "path": r[1], "task_id": r[2], "state": r[3], "external_ref": r[4],"verified_at":r[5],"verification_error":r[6]})
 	}
-	res.JSON(200, map[string]any{"items": items})
+	pending, pendingErr := p.db.Query("SELECT COUNT(*) FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND c.enabled AND s.state='linked' AND s.history_cleared_at IS NULL AND s.paca_task_id IS NOT NULL AND s.verified_at IS NULL AND NOT EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id))",req.PathParam("id"),req.PathParam("projectId"))
+	count := any(0)
+	if pendingErr==nil && len(pending.Rows)==1 { count=pending.Rows[0][0] }
+	res.JSON(200, map[string]any{"items": items,"verification_pending":count})
+}
+
+func (p *integrationPlugin) recheckSources(req *plugin.Request, res *plugin.Response) {
+	_, err := p.db.Exec("UPDATE sources SET verified_at=NULL,verification_error='' WHERE connection_id=$1 AND state='linked' AND history_cleared_at IS NULL AND paca_task_id IS NOT NULL AND EXISTS(SELECT 1 FROM connections c WHERE c.id=sources.connection_id AND c.project_id=$2 AND c.enabled)",req.PathParam("id"),req.PathParam("projectId"))
+	if err!=nil { res.Error(503,"来源关联暂时无法核验。"); return }
+	p.audit(req,"source.recheck",req.PathParam("id"))
+	res.JSON(202,map[string]any{"queued":true})
 }
 func (p *integrationPlugin) link(req *plugin.Request, res *plugin.Response) {
 	body, err := plugin.JSONBody[struct {

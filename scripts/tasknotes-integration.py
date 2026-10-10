@@ -31,10 +31,13 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import threading, datetime
 lose_next_create=False
 create_requests=0
+source_verification_faults={}
 class Proxy(BaseHTTPRequestHandler):
     def log_message(self,*args): pass
     def forward(self):
         global lose_next_create,create_requests
+        if self.command=='GET' and self.path in source_verification_faults:
+            self.send_response(source_verification_faults[self.path]);self.end_headers();self.wfile.write(b'{}');return
         data=self.rfile.read(int(self.headers.get('Content-Length',0))) or None
         request_headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','content-length','connection')}
         forwarded=urllib.request.Request('http://127.0.0.1:18080'+self.path,data=data,method=self.command,headers=request_headers)
