@@ -144,8 +144,12 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	defer conn.Exec(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1,0))", c.ID)
 	// A cleanup may have superseded the operation after it was claimed and before
 	// this connection lock was acquired. Never apply its cached request afterward.
-	if err = conn.QueryRow(ctx,"SELECT state FROM sync_operations WHERE id=$1",id).Scan(&state); err!=nil { return err }
-	if state!="pending" && state!="retry" && state!="sending" && state!="waiting_period" { return nil }
+	if err = conn.QueryRow(ctx, "SELECT state FROM sync_operations WHERE id=$1", id).Scan(&state); err != nil {
+		return err
+	}
+	if state != "pending" && state != "retry" && state != "sending" && state != "waiting_period" {
+		return nil
+	}
 	var canonical *string
 	if err = w.Pool.QueryRow(ctx, "SELECT canonical_id::text FROM sync_objects WHERE id=$1 AND connection_id=$2", op.SyncID, c.ID).Scan(&canonical); err != nil {
 		return err

@@ -245,7 +245,7 @@ func (p *integrationPlugin) deliveries(req *plugin.Request, res *plugin.Response
 	}
 	items := []any{}
 	for _, r := range rows.Rows {
-		items = append(items, map[string]any{"id": r[0], "delivery_id": r[1], "event": r[2], "state": r[3], "error": r[4], "attempts": r[5], "received_at": r[6],"path":r[7],"title":r[8]})
+		items = append(items, map[string]any{"id": r[0], "delivery_id": r[1], "event": r[2], "state": r[3], "error": r[4], "attempts": r[5], "received_at": r[6], "path": r[7], "title": r[8]})
 	}
 	stats, statsErr := p.db.Query("SELECT COALESCE(s.signature_failures,0),s.last_signature_failure::text FROM connections c LEFT JOIN receiver_stats s ON s.connection_id=c.id WHERE c.id=$1 AND c.project_id=$2", req.PathParam("id"), req.PathParam("projectId"))
 	diagnostics := map[string]any{"signature_failures": 0}
@@ -276,19 +276,24 @@ func (p *integrationPlugin) sources(req *plugin.Request, res *plugin.Response) {
 	}
 	items := []any{}
 	for _, r := range rows.Rows {
-		items = append(items, map[string]any{"id": r[0], "path": r[1], "task_id": r[2], "state": r[3], "external_ref": r[4],"verified_at":r[5],"verification_error":r[6]})
+		items = append(items, map[string]any{"id": r[0], "path": r[1], "task_id": r[2], "state": r[3], "external_ref": r[4], "verified_at": r[5], "verification_error": r[6]})
 	}
-	pending, pendingErr := p.db.Query("SELECT COUNT(*) FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND c.enabled AND s.state='linked' AND s.history_cleared_at IS NULL AND s.paca_task_id IS NOT NULL AND s.verified_at IS NULL AND NOT EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id))",req.PathParam("id"),req.PathParam("projectId"))
+	pending, pendingErr := p.db.Query("SELECT COUNT(*) FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND c.enabled AND s.state='linked' AND s.history_cleared_at IS NULL AND s.paca_task_id IS NOT NULL AND s.verified_at IS NULL AND NOT EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id))", req.PathParam("id"), req.PathParam("projectId"))
 	count := any(0)
-	if pendingErr==nil && len(pending.Rows)==1 { count=pending.Rows[0][0] }
-	res.JSON(200, map[string]any{"items": items,"verification_pending":count})
+	if pendingErr == nil && len(pending.Rows) == 1 {
+		count = pending.Rows[0][0]
+	}
+	res.JSON(200, map[string]any{"items": items, "verification_pending": count})
 }
 
 func (p *integrationPlugin) recheckSources(req *plugin.Request, res *plugin.Response) {
-	_, err := p.db.Exec("UPDATE sources SET verified_at=NULL,verification_error='' WHERE connection_id=$1 AND state='linked' AND history_cleared_at IS NULL AND paca_task_id IS NOT NULL AND EXISTS(SELECT 1 FROM connections c WHERE c.id=sources.connection_id AND c.project_id=$2 AND c.enabled)",req.PathParam("id"),req.PathParam("projectId"))
-	if err!=nil { res.Error(503,"来源关联暂时无法核验。"); return }
-	p.audit(req,"source.recheck",req.PathParam("id"))
-	res.JSON(202,map[string]any{"queued":true})
+	_, err := p.db.Exec("UPDATE sources SET verified_at=NULL,verification_error='' WHERE connection_id=$1 AND state='linked' AND history_cleared_at IS NULL AND paca_task_id IS NOT NULL AND EXISTS(SELECT 1 FROM connections c WHERE c.id=sources.connection_id AND c.project_id=$2 AND c.enabled)", req.PathParam("id"), req.PathParam("projectId"))
+	if err != nil {
+		res.Error(503, "来源关联暂时无法核验。")
+		return
+	}
+	p.audit(req, "source.recheck", req.PathParam("id"))
+	res.JSON(202, map[string]any{"queued": true})
 }
 func (p *integrationPlugin) link(req *plugin.Request, res *plugin.Response) {
 	body, err := plugin.JSONBody[struct {

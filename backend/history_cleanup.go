@@ -39,28 +39,42 @@ const historyCandidates = `WITH scope AS MATERIALIZED (
 )`
 
 type historySelection struct {
-	Mode string `json:"mode"`
-	IDs []int64 `json:"ids"`
-	Cutoff string `json:"cutoff"`
-	Confirm bool `json:"confirm"`
+	Mode    string  `json:"mode"`
+	IDs     []int64 `json:"ids"`
+	Cutoff  string  `json:"cutoff"`
+	Confirm bool    `json:"confirm"`
 }
 
 func (b *historySelection) validate() bool {
-	if b.Mode == "" { b.Mode = "history" }
-	if b.Mode == "history" { return len(b.IDs) == 0 }
-	if (b.Mode != "events" && b.Mode != "sources") || len(b.IDs) == 0 || len(b.IDs) > 100 { return false }
+	if b.Mode == "" {
+		b.Mode = "history"
+	}
+	if b.Mode == "history" {
+		return len(b.IDs) == 0
+	}
+	if (b.Mode != "events" && b.Mode != "sources") || len(b.IDs) == 0 || len(b.IDs) > 100 {
+		return false
+	}
 	seen := map[int64]bool{}
-	for _, id := range b.IDs { if id < 1 || seen[id] { return false }; seen[id] = true }
+	for _, id := range b.IDs {
+		if id < 1 || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
 	return true
 }
 
 func (p *integrationPlugin) historyCleanupPreview(req *plugin.Request, res *plugin.Response) {
-	p.previewHistory(req, res, historySelection{Mode:"history", IDs:[]int64{}})
+	p.previewHistory(req, res, historySelection{Mode: "history", IDs: []int64{}})
 }
 
 func (p *integrationPlugin) historySelectionPreview(req *plugin.Request, res *plugin.Response) {
 	body, err := plugin.JSONBody[historySelection](req)
-	if err != nil || !body.validate() { res.Error(400,"请选择当前页面的记录。"); return }
+	if err != nil || !body.validate() {
+		res.Error(400, "请选择当前页面的记录。")
+		return
+	}
 	p.previewHistory(req, res, body)
 }
 
@@ -69,24 +83,34 @@ func (p *integrationPlugin) previewHistory(req *plugin.Request, res *plugin.Resp
 	rows, err := p.db.Query("SELECT * FROM ("+historyCandidates+` SELECT (SELECT COUNT(*) FROM old_objects),(SELECT COUNT(*) FROM old_inbox),(SELECT COUNT(*) FROM old_sources),to_char(cutoff AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
  (SELECT COUNT(*) FROM old_inbox i WHERE i.state IN('error','conflict','uncertain') AND EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=i.connection_id AND NOT o.deleted AND (EXISTS(SELECT 1 FROM scoped_operations x WHERE x.inbox_id=i.id AND x.object_id=o.id) OR o.path=i.body#>>'{data,task,path}')))
  FROM scope) preview`, req.PathParam("projectId"), req.PathParam("id"), "", body.Mode, string(ids))
-	if err != nil { res.Error(503, "清理范围暂时无法读取。"); return }
-	if len(rows.Rows) != 1 { res.Error(404, "来源连接未找到。"); return }
+	if err != nil {
+		res.Error(503, "清理范围暂时无法读取。")
+		return
+	}
+	if len(rows.Rows) != 1 {
+		res.Error(404, "来源连接未找到。")
+		return
+	}
 	r := rows.Rows[0]
-	res.JSON(200, map[string]any{"deleted_tasks": r[0], "processed_events": r[1], "obsolete_sources": r[2], "cutoff": r[3], "live_changes":r[4]})
+	res.JSON(200, map[string]any{"deleted_tasks": r[0], "processed_events": r[1], "obsolete_sources": r[2], "cutoff": r[3], "live_changes": r[4]})
 }
 
 func (p *integrationPlugin) historyCleanup(req *plugin.Request, res *plugin.Response) {
 	body, err := plugin.JSONBody[historySelection](req)
 	cutoff, parseErr := time.Parse(time.RFC3339Nano, body.Cutoff)
 	if err != nil || parseErr != nil || !body.validate() || !body.Confirm || cutoff.After(time.Now().Add(time.Minute)) {
-		res.Error(400, "请先核对清理范围并确认。"); return
+		res.Error(400, "请先核对清理范围并确认。")
+		return
 	}
 	id, err := newUUID()
-	if err != nil { res.Error(503, "旧历史暂时无法清理。"); return }
+	if err != nil {
+		res.Error(503, "旧历史暂时无法清理。")
+		return
+	}
 	ids, _ := json.Marshal(body.IDs)
 	// Share the worker's connection lock and lock operation rows before deciding
 	// eligibility. This excludes an operation claimed just before this request.
-	locked := strings.Replace(historyCandidates,"WHERE project_id=$1 AND id=$2\n", "WHERE project_id=$1 AND id=$2 AND pg_try_advisory_xact_lock(hashtextextended(id::text,0))\n",1)
+	locked := strings.Replace(historyCandidates, "WHERE project_id=$1 AND id=$2\n", "WHERE project_id=$1 AND id=$2 AND pg_try_advisory_xact_lock(hashtextextended(id::text,0))\n", 1)
 	locked = strings.Replace(locked, "), old_objects AS (", " FOR UPDATE OF x), old_objects AS (", 1)
 	locked = strings.Replace(locked, "), old_sources AS (", " FOR UPDATE OF o), old_sources AS (", 1)
 	locked = strings.Replace(locked, "), old_inbox AS (", " FOR UPDATE OF s), old_inbox AS (", 1)
@@ -117,14 +141,24 @@ func (p *integrationPlugin) historyCleanup(req *plugin.Request, res *plugin.Resp
 )
 INSERT INTO history_cleanups(id,connection_id,cutoff,deleted_tasks,processed_events,obsolete_sources)
 SELECT $6,id,cutoff,(SELECT COUNT(*) FROM cleared_objects),(SELECT COUNT(*) FROM cleared_inbox),(SELECT COUNT(*) FROM cleared_sources) FROM scope`, req.PathParam("projectId"), req.PathParam("id"), body.Cutoff, body.Mode, string(ids), id)
-	if err != nil { res.Error(503, "旧历史暂时无法清理，请重试。"); return }
+	if err != nil {
+		res.Error(503, "旧历史暂时无法清理，请重试。")
+		return
+	}
 	if n != 1 {
-		rows, e := p.db.Query("SELECT id FROM connections WHERE id=$1 AND project_id=$2",req.PathParam("id"),req.PathParam("projectId"))
-		if e==nil && len(rows.Rows)==0 { res.Error(404,"来源连接未找到。") } else { res.Error(409,"同步正在处理这个连接，请稍后重新核对清理范围。") }
+		rows, e := p.db.Query("SELECT id FROM connections WHERE id=$1 AND project_id=$2", req.PathParam("id"), req.PathParam("projectId"))
+		if e == nil && len(rows.Rows) == 0 {
+			res.Error(404, "来源连接未找到。")
+		} else {
+			res.Error(409, "同步正在处理这个连接，请稍后重新核对清理范围。")
+		}
 		return
 	}
 	rows, err := p.db.Query("SELECT h.deleted_tasks,h.processed_events,h.obsolete_sources FROM history_cleanups h JOIN connections c ON c.id=h.connection_id WHERE h.id=$1 AND c.id=$2 AND c.project_id=$3", id, req.PathParam("id"), req.PathParam("projectId"))
-	if err != nil || len(rows.Rows) != 1 { res.Error(503, "清理结果暂时无法读取，请刷新记录。"); return }
+	if err != nil || len(rows.Rows) != 1 {
+		res.Error(503, "清理结果暂时无法读取，请刷新记录。")
+		return
+	}
 	r := rows.Rows[0]
 	p.audit(req, "history.cleared", req.PathParam("id")+":"+fmt.Sprint(r))
 	res.JSON(200, map[string]any{"deleted_tasks": r[0], "processed_events": r[1], "obsolete_sources": r[2]})
