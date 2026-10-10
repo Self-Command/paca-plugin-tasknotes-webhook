@@ -1,8 +1,10 @@
 """Reproduce the user's blocked confirmation and history cleanup in official Paca."""
 schema='plugin_data_com_selfcommand_tasknotes_webhook'
 def history_sql(sql):
-    result=subprocess.run(['docker','exec','-i','paca-ci-db','psql','-X','-A','-t','-v','ON_ERROR_STOP=1','-U','postgres','-d','paca'],input='SET search_path TO '+schema+';\n'+sql,text=True,capture_output=True,check=True)
-    return result.stdout.strip().splitlines()[-1]
+    result=subprocess.run(['docker','exec','-i','paca-ci-db','psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-U','postgres','-d','paca'],input='SET search_path TO '+schema+';\n'+sql,text=True,capture_output=True)
+    if result.returncode:raise RuntimeError(result.stderr)
+    lines=result.stdout.strip().splitlines()
+    return lines[-1] if lines else ''
 hp=request('POST','/projects',{'name':'清单与历史回归','task_id_prefix':'HIS'},201)['data']
 hs=request('GET',f'/projects/{hp["id"]}/task-statuses')['data']['items']
 hm={'open':next(s['id'] for s in hs if s['category']=='todo'),'done':next(s['id'] for s in hs if s['category']=='done')}
