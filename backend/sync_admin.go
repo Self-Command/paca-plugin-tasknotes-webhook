@@ -91,6 +91,7 @@ func (p *integrationPlugin) syncPreview(req *plugin.Request, res *plugin.Respons
 
 // Deleted tombstones never block first-time confirmation, including empty projects.
 const syncReadySQL = `SELECT EXISTS(SELECT 1 FROM sync_scan_state s JOIN connections c ON c.id=s.connection_id LEFT JOIN sync_dirty d ON d.project_id=c.project_id WHERE c.id=$1 AND c.project_id=$2 AND s.last_complete IS NOT NULL AND s.last_error='' AND (d.updated_at IS NULL OR d.updated_at<=s.last_complete)) AND NOT EXISTS(SELECT 1 FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2 AND NOT o.deleted AND o.last_error<>'')`
+
 func (p *integrationPlugin) syncPair(req *plugin.Request, res *plugin.Response) {
 	rows, err := p.db.Query("SELECT id FROM connections WHERE id=$1 AND project_id=$2 AND enabled", req.PathParam("id"), req.PathParam("projectId"))
 	if err != nil || len(rows.Rows) != 1 {
