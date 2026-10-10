@@ -209,42 +209,6 @@ func (w *Worker) migratePair(out http.ResponseWriter, r *http.Request) {
 	}
 	syncJSON(out, 201, map[string]any{"token": plain, "connection_id": scope.Connection, "project_id": scope.Project})
 }
-func (w *Worker) proxyCheckinSync(out http.ResponseWriter, r *http.Request) {
-	a, err := w.syncAuth(r.Context(), r)
-	if err != nil {
-		syncFail(out, 401, "配对无效或插件已停用。")
-		return
-	}
-	if w.CheckinURL == "" || w.CheckinSecret == "" {
-		syncFail(out, 503, "打卡服务未启用。")
-		return
-	}
-	suffix := strings.TrimPrefix(r.URL.Path, "/task-sync/v1/checkin/")
-	if !regexp.MustCompile(`^(info|changes|sources/[a-fA-F0-9-]{36}|media/[a-fA-F0-9-]{36}|receipts|receipts/[a-fA-F0-9-]{36}/ack|conflicts|conflicts/[a-fA-F0-9-]{36}/resolve)$`).MatchString(suffix) {
-		syncFail(out, 404, "接口未找到。")
-		return
-	}
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, w.CheckinURL+"/internal/v1/sync/"+suffix+"?"+r.URL.RawQuery, io.LimitReader(r.Body, 1024*1024))
-	if err != nil {
-		syncFail(out, 400, "请求无效。")
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+w.CheckinSecret)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Sync-Project", a.Project)
-	req.Header.Set("X-Sync-Connection", a.Connection)
-	req.Header.Set("X-Sync-Device", a.Device)
-	reply, err := w.HTTP.Do(req)
-	if err != nil {
-		syncFail(out, 503, "打卡同步暂不可用。")
-		return
-	}
-	defer reply.Body.Close()
-	out.Header().Set("Content-Type", reply.Header.Get("Content-Type"))
-	out.Header().Set("Cache-Control", "no-store")
-	out.WriteHeader(reply.StatusCode)
-	_, _ = io.Copy(out, io.LimitReader(reply.Body, 11*1024*1024))
-}
 func (w *Worker) syncBinding(out http.ResponseWriter, r *http.Request) {
 	a, err := w.syncAuth(r.Context(), r)
 	if err != nil {
