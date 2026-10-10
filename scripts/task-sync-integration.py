@@ -115,6 +115,11 @@ try:
         if sync_item(created_id)['deleted']: break
         time.sleep(.5)
     else: raise AssertionError('Confirmed core deletion did not generate tombstone')
+    deleted_status=request('GET',f'/plugins/{plugin_id}/projects/{sync_project["id"]}/tasks/{created_id}/source-status')
+    assert deleted_status['state']=='deleted' and deleted_status['connection_id']==sync_connection_id
+    assert request('GET',f'/plugins/{plugin_id}/projects/{sync_project["id"]}/tasks/{uuid.uuid4()}/source-status')['state']=='unlinked'
+    bindings=request('GET',sync_admin+'/note-bindings')['items']
+    assert all(row['path'] and row['note_created'] for row in bindings)
     delete_item=sync_item(native['id'])
     delete_op=submit(delete_item,{},'delete')
     wait_operation(delete_op)

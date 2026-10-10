@@ -115,6 +115,9 @@ func (w *Worker) transferCheckin(out http.ResponseWriter, r *http.Request, a syn
 			p.Out.Header.Set("X-Sync-Project", a.Project)
 			p.Out.Header.Set("X-Sync-Connection", a.Connection)
 			p.Out.Header.Set("X-Sync-Device", a.Device)
+			if p.In.Header.Get("X-Sync-Version") == "2" {
+				p.Out.Header.Set("X-Sync-Version", "2")
+			}
 			p.Out.Header.Set("X-Request-ID", id)
 		},
 		ModifyResponse: func(reply *http.Response) error {

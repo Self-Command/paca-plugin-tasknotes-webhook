@@ -87,6 +87,7 @@ try:
         save_diagnostic('obsidian-startup')
         try:
             ui_page.wait_for_function('()=>Boolean(window.app?.plugins?.plugins?.tasknotes?.cacheManager)',timeout=60000)
+            ui_page.locator('.modal').filter(has_text='Do you trust the author of this vault?').wait_for(state='hidden',timeout=60000)
         except Exception:
             save_diagnostic('obsidian-plugin-load-failure');raise
         for _ in range(3):ui_page.keyboard.press('Escape')

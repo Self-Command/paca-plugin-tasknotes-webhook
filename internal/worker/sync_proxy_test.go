@@ -12,7 +12,7 @@ import (
 func TestCheckinTransferPreservesCompleteMediaAndScope(t *testing.T) {
 	photo := bytes.Repeat([]byte{1, 2, 3, 4}, 2621440)
 	upstream := httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/internal/v1/sync/media/00000000-0000-4000-8000-000000000001" || r.Header.Get("Authorization") != "Bearer internal" || r.Header.Get("X-Sync-Device") != "device" {
+		if r.URL.Path != "/internal/v1/sync/media/00000000-0000-4000-8000-000000000001" || r.Header.Get("Authorization") != "Bearer internal" || r.Header.Get("X-Sync-Device") != "device" || r.Header.Get("X-Sync-Version") != "2" {
 			t.Error("unexpected delegation")
 		}
 		out.Header().Set("Content-Type", "image/jpeg")
@@ -25,7 +25,9 @@ func TestCheckinTransferPreservesCompleteMediaAndScope(t *testing.T) {
 		w.transferCheckin(out, r, syncAuth{Project: "project", Connection: "vault", Device: "device"})
 	}))
 	defer proxy.Close()
-	r, err := http.Get(proxy.URL + "/task-sync/v1/checkin/media/00000000-0000-4000-8000-000000000001")
+	req, _ := http.NewRequest("GET", proxy.URL+"/task-sync/v1/checkin/media/00000000-0000-4000-8000-000000000001", nil)
+	req.Header.Set("X-Sync-Version", "2")
+	r, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
