@@ -45,6 +45,10 @@ func (w *syncTransferWriter) Write(data []byte) (int, error) {
 }
 
 func (w *Worker) proxyCheckinSync(out http.ResponseWriter, r *http.Request) {
+	if err := w.control(r.Context()); err != nil {
+		syncJSON(out, 503, map[string]any{"code": "unavailable", "error": "同步服务暂不可用，请稍后重试。", "retryable": true})
+		return
+	}
 	a, err := w.syncAuth(r.Context(), r)
 	if err != nil {
 		syncFail(out, 401, "配对无效或插件已停用。")
