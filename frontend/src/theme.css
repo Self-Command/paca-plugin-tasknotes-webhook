@@ -12,3 +12,18 @@
 .checkin-ui button{cursor:pointer}.checkin-ui button:disabled{cursor:default}.checkin-ui img{max-width:100%}
 
 .checkin-ui h1{font:inherit}.checkin-ui h2{font:inherit}
+.checkin-ui .sync-heading,.checkin-ui .sync-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.checkin-ui .sync-heading{justify-content:space-between}
+.checkin-ui .sync-actions button{min-height:44px}
+.checkin-ui .sync-task{padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+.checkin-ui .sync-details{border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden}
+.checkin-ui .sync-details>summary{padding:14px 16px;min-height:48px;cursor:pointer;font-size:14px;font-weight:500}
+.checkin-ui .sync-details-body{padding:0 16px 16px}
+.checkin-ui .sync-details-body .sync-task{margin-top:8px}
+.checkin-ui .sync-history-dialog{position:fixed;inset:0;margin:auto;width:min(480px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;padding:24px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--foreground);box-shadow:0 24px 80px #0004}
+.checkin-ui .sync-history-dialog::backdrop{background:#0006}
+.checkin-ui .sync-history-dialog h2{font-size:18px;font-weight:600;margin-bottom:12px}
+.checkin-ui .sync-cleanup-counts{list-style:none;padding:14px 0;margin:12px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.checkin-ui .sync-cleanup-counts li{display:flex;justify-content:space-between;gap:16px;padding:5px 0;font-size:14px}
+.checkin-ui .sync-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.checkin-ui .sync-dialog-actions button{min-height:44px}

@@ -35,6 +35,8 @@ func (p *integrationPlugin) Init(ctx *plugin.Context) error {
 	ctx.Route("POST", "/receive/:id", p.receive)
 	ctx.Route("PUT", "/projects/:projectId/connections/:id/sync-config", p.syncConfig)
 	ctx.Route("GET", "/projects/:projectId/connections/:id/sync-preview", p.syncPreview)
+	ctx.Route("GET", "/projects/:projectId/connections/:id/history-cleanup", p.historyCleanupPreview)
+	ctx.Route("POST", "/projects/:projectId/connections/:id/history-cleanup", p.historyCleanup)
 	ctx.Route("POST", "/projects/:projectId/connections/:id/pairing", p.syncPair)
 	ctx.Route("DELETE", "/projects/:projectId/connections/:id/pairing/:credential", p.revokeSync)
 	ctx.Route("GET", "/projects/:projectId/tasks/:taskId/recurrence", p.getRecurrence)

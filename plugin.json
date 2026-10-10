@@ -412,6 +412,44 @@
             ]
           }
         ]
+      },
+      {
+        "method": "GET",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.read"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/connections/:id/history-cleanup"
+      },
+      {
+        "method": "POST",
+        "middlewares": [
+          {
+            "name": "optionalAuthn"
+          },
+          {
+            "name": "requireFreshPassword"
+          },
+          {
+            "name": "requirePermissions",
+            "permissions": [
+              "tasknotes_webhook.manage"
+            ],
+            "scope": "project"
+          }
+        ],
+        "path": "/projects/:projectId/connections/:id/history-cleanup"
       }
     ],
     "sensitiveFields": {

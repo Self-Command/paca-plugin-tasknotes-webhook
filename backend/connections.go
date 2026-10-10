@@ -238,7 +238,7 @@ func (p *integrationPlugin) receive(req *plugin.Request, res *plugin.Response) {
 	res.JSON(code, map[string]any{"id": r[0], "state": r[1], "duplicate": n == 0})
 }
 func (p *integrationPlugin) deliveries(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT i.id,i.delivery_id,i.event,i.state,i.error,i.attempts,i.received_at::text FROM inbox i JOIN connections c ON c.id=i.connection_id WHERE c.project_id=$1 AND c.id=$2 ORDER BY i.id DESC LIMIT 100", req.PathParam("projectId"), req.PathParam("id"))
+	rows, err := p.db.Query("SELECT i.id,i.delivery_id,i.event,i.state,i.error,i.attempts,i.received_at::text FROM inbox i JOIN connections c ON c.id=i.connection_id WHERE c.project_id=$1 AND c.id=$2 AND i.history_cleared_at IS NULL ORDER BY i.id DESC LIMIT 100", req.PathParam("projectId"), req.PathParam("id"))
 	if err != nil {
 		res.Error(503, "history unavailable")
 		return
@@ -269,7 +269,7 @@ func (p *integrationPlugin) reprocess(req *plugin.Request, res *plugin.Response)
 	res.JSON(200, map[string]any{"queued": true})
 }
 func (p *integrationPlugin) sources(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT s.id,COALESCE(s.snapshot->>'path',s.source_key),COALESCE(s.paca_task_id::text,''),s.state,s.external_ref FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 ORDER BY s.id DESC LIMIT 100", req.PathParam("id"), req.PathParam("projectId"))
+	rows, err := p.db.Query("SELECT s.id,COALESCE(s.snapshot->>'path',s.source_key),COALESCE(s.paca_task_id::text,''),CASE WHEN EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=s.connection_id AND (o.source_id=s.id OR o.paca_task_id=s.paca_task_id) AND o.deleted) THEN 'deleted' ELSE s.state END,s.external_ref FROM sources s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND s.history_cleared_at IS NULL ORDER BY s.id DESC LIMIT 100", req.PathParam("id"), req.PathParam("projectId"))
 	if err != nil {
 		res.Error(503, "source associations unavailable")
 		return
@@ -290,7 +290,7 @@ func (p *integrationPlugin) link(req *plugin.Request, res *plugin.Response) {
 		return
 	}
 	// The worker verifies the target through the project-scoped core REST API before adopting it.
-	n, err := p.db.Exec("UPDATE sources SET paca_task_id=$1,state='link_pending',updated_at=NOW() WHERE id=$2 AND connection_id=$3 AND state<>'deleted' AND EXISTS(SELECT 1 FROM connections c WHERE c.id=sources.connection_id AND c.project_id=$4)", body.TaskID, body.SourceID, req.PathParam("id"), req.PathParam("projectId"))
+	n, err := p.db.Exec("UPDATE sources SET paca_task_id=$1,state='link_pending',updated_at=NOW() WHERE id=$2 AND connection_id=$3 AND state NOT IN('deleted','superseded') AND history_cleared_at IS NULL AND NOT EXISTS(SELECT 1 FROM sync_objects o WHERE o.connection_id=sources.connection_id AND (o.source_id=sources.id OR o.paca_task_id=sources.paca_task_id) AND o.deleted) AND EXISTS(SELECT 1 FROM connections c WHERE c.id=sources.connection_id AND c.project_id=$4)", body.TaskID, body.SourceID, req.PathParam("id"), req.PathParam("projectId"))
 	if err != nil {
 		res.Error(503, "link failed")
 		return

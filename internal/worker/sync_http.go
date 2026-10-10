@@ -146,6 +146,9 @@ func (w *Worker) syncChanges(out http.ResponseWriter, r *http.Request) {
 			return
 		}
 		item.Cursor = cursor
+		if item.Deleted {
+			item.Warnings = nil
+		}
 		items = append(items, item)
 		next = cursor
 	}

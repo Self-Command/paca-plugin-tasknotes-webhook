@@ -38,7 +38,7 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 		raw = []byte("{}")
 	}
 	if body.Mode == "enabled" {
-		ready, checkErr := p.db.Query("SELECT EXISTS(SELECT 1 FROM sync_scan_state s JOIN connections c ON c.id=s.connection_id WHERE c.id=$1 AND c.project_id=$2 AND s.last_complete IS NOT NULL AND s.last_error='') AND NOT EXISTS(SELECT 1 FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2 AND NOT o.deleted AND o.last_error<>'')", req.PathParam("id"), req.PathParam("projectId"))
+		ready, checkErr := p.db.Query(syncReadySQL+" OR EXISTS(SELECT 1 FROM connections WHERE id=$1 AND project_id=$2 AND sync_mode='enabled')", req.PathParam("id"), req.PathParam("projectId"))
 		if checkErr != nil || len(ready.Rows) != 1 || fmt.Sprint(ready.Rows[0][0]) != "true" {
 			res.Error(409, "请先完成任务清单和状态对应检查。")
 			return
@@ -58,24 +58,39 @@ func (p *integrationPlugin) syncConfig(req *plugin.Request, res *plugin.Response
 	res.JSON(200, map[string]any{"revision": body.Revision + 1, "mode": body.Mode})
 }
 func (p *integrationPlugin) syncPreview(req *plugin.Request, res *plugin.Response) {
-	rows, err := p.db.Query("SELECT o.id::text,o.paca_task_id::text,o.revision,o.snapshot::text,o.path,o.deleted,o.last_error,c.sync_mode FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND c.id=$2 ORDER BY o.updated_at,o.id LIMIT 200", req.PathParam("projectId"), req.PathParam("id"))
+	rows, err := p.db.Query("WITH ranked AS (SELECT o.*,c.sync_mode,ROW_NUMBER() OVER(PARTITION BY o.deleted ORDER BY o.updated_at,o.id) AS n FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.project_id=$1 AND c.id=$2 AND (NOT o.deleted OR o.history_cleared_at IS NULL)) SELECT id::text,paca_task_id::text,revision,snapshot::text,path,deleted,last_error,sync_mode FROM ranked WHERE n<=200 ORDER BY deleted,n", req.PathParam("projectId"), req.PathParam("id"))
 	if err != nil {
 		res.Error(503, "任务清单暂时无法读取。")
 		return
 	}
 	items := []any{}
+	history := []any{}
 	for _, r := range rows.Rows {
 		var snapshot any
 		_ = json.Unmarshal([]byte(fmt.Sprint(r[3])), &snapshot)
-		items = append(items, map[string]any{"sync_id": r[0], "task_id": r[1], "revision": r[2], "snapshot": snapshot, "path": r[4], "deleted": r[5], "warning": r[6], "mode": r[7]})
+		item := map[string]any{"sync_id": r[0], "task_id": r[1], "revision": r[2], "snapshot": snapshot, "path": r[4], "deleted": r[5], "warning": r[6], "mode": r[7]}
+		if fmt.Sprint(r[5]) == "true" {
+			if len(history) < 200 {
+				history = append(history, item)
+			}
+		} else {
+			if len(items) < 200 {
+				items = append(items, item)
+			}
+		}
 	}
-	counts, err := p.db.Query("SELECT COUNT(*) FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2", req.PathParam("id"), req.PathParam("projectId"))
-	if err != nil {
+	ready, err := p.db.Query(syncReadySQL, req.PathParam("id"), req.PathParam("projectId"))
+	counts, countErr := p.db.Query("SELECT COUNT(*) FILTER(WHERE NOT o.deleted),COUNT(*) FILTER(WHERE o.deleted AND o.history_cleared_at IS NULL),COUNT(*) FILTER(WHERE NOT o.deleted AND o.last_error<>'') FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2", req.PathParam("id"), req.PathParam("projectId"))
+	scan, scanErr := p.db.Query("SELECT COALESCE(s.last_error,''),s.last_complete::text FROM connections c LEFT JOIN sync_scan_state s ON s.connection_id=c.id WHERE c.id=$1 AND c.project_id=$2", req.PathParam("id"), req.PathParam("projectId"))
+	if err != nil || scanErr != nil || countErr != nil || len(scan.Rows) != 1 || len(counts.Rows) != 1 {
 		res.Error(503, "任务清单暂时无法读取。")
 		return
 	}
-	res.JSON(200, map[string]any{"items": items, "total": counts.Rows[0][0], "preview_limit": 200})
+	res.JSON(200, map[string]any{"items": items, "total": counts.Rows[0][0], "history_items": history, "history_total": counts.Rows[0][1], "warning_count": counts.Rows[0][2], "ready": len(ready.Rows) == 1 && fmt.Sprint(ready.Rows[0][0]) == "true", "scan_error": scan.Rows[0][0], "last_complete": scan.Rows[0][1], "preview_limit": 200})
 }
+
+// Deleted tombstones never block first-time confirmation, including empty projects.
+const syncReadySQL = `SELECT EXISTS(SELECT 1 FROM sync_scan_state s JOIN connections c ON c.id=s.connection_id LEFT JOIN sync_dirty d ON d.project_id=c.project_id WHERE c.id=$1 AND c.project_id=$2 AND s.last_complete IS NOT NULL AND s.last_error='' AND (d.updated_at IS NULL OR d.updated_at<=s.last_complete)) AND NOT EXISTS(SELECT 1 FROM sync_objects o JOIN connections c ON c.id=o.connection_id WHERE c.id=$1 AND c.project_id=$2 AND NOT o.deleted AND o.last_error<>'')`
 func (p *integrationPlugin) syncPair(req *plugin.Request, res *plugin.Response) {
 	rows, err := p.db.Query("SELECT id FROM connections WHERE id=$1 AND project_id=$2 AND enabled", req.PathParam("id"), req.PathParam("projectId"))
 	if err != nil || len(rows.Rows) != 1 {
