@@ -12,6 +12,7 @@ import (
 var cards = regexp.MustCompile("(?s)<!-- paca-checkin:start -->.*?<!-- paca-checkin:end -->")
 
 func TaskBody(value string) string {
+	value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
 	value = regexp.MustCompile(`<!-- paca-sync-id:[a-fA-F0-9-]{36} -->`).ReplaceAllString(value, "")
 	value = cards.ReplaceAllString(value, "")
 	start, end := "<!-- paca-task-content:start -->", "<!-- paca-task-content:end -->"

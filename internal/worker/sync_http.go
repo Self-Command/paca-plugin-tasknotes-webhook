@@ -108,7 +108,7 @@ func (w *Worker) syncInfo(out http.ResponseWriter, r *http.Request) {
 		syncFail(out, 503, "同步设置暂不可用。")
 		return
 	}
-	syncJSON(out, 200, map[string]any{"connection_id": a.Connection, "project_id": a.Project, "mode": a.Mode, "timezone": c.Timezone, "status_map": c.Statuses, "priority_map": c.Priorities})
+	syncJSON(out, 200, map[string]any{"connection_id": a.Connection, "project_id": a.Project, "mode": a.Mode, "timezone": c.Timezone, "status_map": c.Statuses, "priority_map": c.Priorities, "sync_priorities": []string{"server", "local"}})
 }
 func (w *Worker) syncChanges(out http.ResponseWriter, r *http.Request) {
 	a, err := w.syncAuth(r.Context(), r)
@@ -252,11 +252,20 @@ func (w *Worker) syncBinding(out http.ResponseWriter, r *http.Request) {
 		syncFail(out, 404, "任务未找到。")
 		return
 	}
+	if body.Action == "restore" && state == "bound" && path == body.Path && birth == body.Created {
+		_, err = tx.Exec(r.Context(), "UPDATE sync_objects SET binding_state='creating',binding_owner=$2,binding_until=NOW()+INTERVAL '2 minutes' WHERE id=$1", body.SyncID, a.Device)
+		if err != nil || tx.Commit(r.Context()) != nil {
+			syncFail(out, 503, "恢复笔记暂时无法登记。")
+			return
+		}
+		syncJSON(out, 200, map[string]any{"state": "claimed"})
+		return
+	}
 	if state == "bound" {
 		syncJSON(out, 200, map[string]any{"state": state, "path": path, "note_created": birth})
 		return
 	}
-	if body.Action == "claim" {
+	if body.Action == "claim" || body.Action == "restore" {
 		if state == "creating" && (owner == nil || *owner != a.Device) {
 			syncJSON(out, 200, map[string]any{"state": "pending", "message": "另一设备的创建结果尚未确认。"})
 			return
@@ -290,6 +299,21 @@ func (w *Worker) syncBinding(out http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), "UPDATE sync_objects SET path=$2,note_created=$3,binding_state='bound',source_id=$4,updated_at=NOW() WHERE id=$1", body.SyncID, body.Path, body.Created, sourceID)
+	}
+	if err == nil && path != "" && (path != body.Path || birth != body.Created) {
+		_, err = tx.Exec(r.Context(), "UPDATE sources SET snapshot=$2::jsonb,state='linked',updated_at=NOW() WHERE id=$1", sourceID, string(raw))
+	}
+	if err == nil && path != "" && (path != body.Path || birth != body.Created) {
+		revision++
+		_, err = tx.Exec(r.Context(), "UPDATE sync_objects SET revision=$2 WHERE id=$1", body.SyncID, revision)
+		change := tasksync.Change{SyncID: body.SyncID, TaskID: task, Revision: revision, Path: body.Path, Created: body.Created, SourceRef: ref, Snapshot: snapshot}
+		change.Kind = "task"
+		if rule, ok := snapshot["recurrence"].(string); ok && rule != "" { change.Kind = "series" }
+		if date, ok := snapshot["occurrence_date"].(string); ok && date != "" { change.Kind = "occurrence" }
+		payload, _ := json.Marshal(change)
+		if err == nil {
+			_, err = tx.Exec(r.Context(), "INSERT INTO sync_changes(connection_id,object_id,revision,payload) VALUES($1,$2,$3,$4::jsonb)", a.Connection, body.SyncID, revision, string(payload))
+		}
 	}
 	if err != nil || tx.Commit(r.Context()) != nil {
 		syncFail(out, 503, "关联暂时无法保存。")

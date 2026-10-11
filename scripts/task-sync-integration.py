@@ -101,6 +101,56 @@ try:
     unarchive=submit(sync_item(native['id']),{'archived':False})
     wait_operation(unarchive)
     assert request('GET',f'/projects/{sync_project["id"]}/tasks/{native["id"]}')['data']['status_id']!=sync_archive['id']
+    # Selected priorities resolve overlapping fields automatically, while both
+    # directions retain unrelated edits and the same synchronization identity.
+    def preferred(item, changes, prefer, kind='update'):
+        body={'op_id':str(uuid.uuid4()),'sync_id':item['sync_id'],'base_revision':item['revision'],'kind':kind,'base':item['snapshot'],'changes':changes,'prefer':prefer}
+        sync_request('POST','/operations',body,202)
+        return body
+    assert sync_request('GET','/info')['sync_priorities']==['server','local']
+    for prefer in ('server','local'):
+        preferred_core=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'优先规则原始标题 '+prefer,'status_id':sync_mapping['open']},201)['data']
+        preferred_base=sync_item(preferred_core['id'])
+        request('PATCH',f'/projects/{sync_project["id"]}/tasks/{preferred_core["id"]}',{'title':'服务器修改 '+prefer,'tags':['保留服务器标签']})
+        preferred_op=preferred(preferred_base,{'title':'Obsidian 修改 '+prefer,'priority':'high'},prefer)
+        wait_operation(preferred_op)
+        preferred_actual=request('GET',f'/projects/{sync_project["id"]}/tasks/{preferred_core["id"]}')['data']
+        assert preferred_actual['title']==('服务器修改 '+prefer if prefer=='server' else 'Obsidian 修改 '+prefer)
+        assert preferred_actual['importance']==75 and preferred_actual['tags']==['保留服务器标签']
+        assert not sync_request('GET','/conflicts')['items']
+        preferred_now=sync_item(preferred_core['id'])
+        # A real Obsidian edit wins against deletion only when explicitly queued.
+        request('DELETE',f'/projects/{sync_project["id"]}/tasks/{preferred_core["id"]}')
+        preferred_late=preferred(preferred_now,{'title':'恢复的本地任务 '+prefer},prefer)
+        if prefer=='server':
+            wait_operation(preferred_late,'superseded')
+            request('GET',f'/projects/{sync_project["id"]}/tasks/{preferred_core["id"]}',expected=404)
+        else:
+            restored_result=wait_operation(preferred_late)
+            restored_id=restored_result['result']['task_id']
+            assert restored_id!=preferred_core['id']
+            restored_item=sync_item(restored_id)
+            assert restored_item['sync_id']==preferred_base['sync_id'] and not restored_item['deleted']
+            assert restored_item['snapshot']['title']=='恢复的本地任务 '+prefer
+            assert restored_item['snapshot']['priority']=='high'
+    # A local delete loses to a concurrent server edit in server priority.
+    restore_core=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'服务器保留的任务'},201)['data']
+    restore_base=sync_item(restore_core['id'])
+    sync_request('POST','/bindings',{'sync_id':restore_base['sync_id'],'action':'claim'})
+    sync_request('POST','/bindings',{'sync_id':restore_base['sync_id'],'action':'confirm','path':'Tasks/恢复前.md','note_created':'2026-10-11T10:00:00Z'})
+    request('PATCH',f'/projects/{sync_project["id"]}/tasks/{restore_core["id"]}',{'title':'服务器更新后保留'})
+    rejected_delete=preferred(restore_base,{},'server','delete')
+    wait_operation(rejected_delete,'superseded')
+    sync_request('POST','/bindings',{'sync_id':restore_base['sync_id'],'action':'restore','path':'Tasks/恢复前.md','note_created':'2026-10-11T10:00:00Z'})
+    assert sync_request('POST','/bindings',{'sync_id':restore_base['sync_id'],'action':'restore','path':'Tasks/恢复前.md','note_created':'2026-10-11T10:00:00Z'},device=other_device)['state']=='pending'
+    sync_request('POST','/bindings',{'sync_id':restore_base['sync_id'],'action':'confirm','path':'Tasks/恢复后.md','note_created':'2026-10-11T11:00:00Z'})
+    restore_feed=sync_item(restore_core['id'])
+    assert restore_feed['path']=='Tasks/恢复后.md' and restore_feed['note_created']=='2026-10-11T11:00:00Z'
+    assert restore_feed['snapshot']['title']=='服务器更新后保留'
+    # Local priority also permits an explicit delete against a newer server edit.
+    local_delete=preferred(restore_base,{},'local','delete')
+    wait_operation(local_delete)
+    request('GET',f'/projects/{sync_project["id"]}/tasks/{restore_core["id"]}',expected=404)
     # Response loss after a successful POST is reconciled by the stable external marker.
     before_creates=create_requests
     lose_next_create=True
@@ -166,6 +216,7 @@ try:
     exec((ROOT/'scripts/history-discard-integration.py').read_text(),globals())
     exec((ROOT/'scripts/recurrence-integration.py').read_text(),globals())
     exec((ROOT/'scripts/schedule-freeze-integration.py').read_text(),globals())
+    (verification/'sync-priority-report.json').write_text(json.dumps({'server_field_priority':True,'obsidian_field_priority':True,'different_fields_preserved':True,'server_delete_wins':True,'obsidian_recorded_edit_restores_same_identity':True,'server_rejected_local_delete_restores_binding':True,'restore_not_claimed_twice':True,'obsidian_delete_wins':True},indent=2))
     (verification/'task-sync-report.json').write_text(json.dumps({'official_paca':'0.18.6','initial_preview':True,'native_create_exported':True,'project_scope':True,'creation_lease_not_stolen':True,'actual_write_ack':True,'different_fields_merged':True,'same_field_conflict':True,'operation_idempotent':True,'precise_time_preserved':True,'unmapped_custom_fields_preserved':True,'archive_unarchive':True,'lost_create_response_one_task':True,'native_delete_tombstone':True,'obsidian_delete_core':True,'durable_restart':True,'plugin_disable_pauses_sync':True},ensure_ascii=False,indent=2))
 finally:
     try:(verification/'task-sync-diagnostic.json').write_text(json.dumps({'preview':request('GET',sync_admin+'/sync-preview'),'changes':feed(),'operations':sync_request('GET','/conflicts')},ensure_ascii=False,indent=2))

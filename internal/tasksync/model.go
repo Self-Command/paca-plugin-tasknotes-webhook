@@ -23,6 +23,7 @@ type Operation struct {
 	Changes      Snapshot `json:"changes"`
 	Path         string   `json:"path,omitempty"`
 	Created      string   `json:"note_created,omitempty"`
+	Prefer       string   `json:"prefer,omitempty"`
 }
 type Change struct {
 	Cursor    int64    `json:"cursor"`
@@ -80,4 +81,28 @@ func Merge(base, changes, remote Snapshot) (Snapshot, []string, error) {
 	}
 	sort.Strings(conflicts)
 	return merged, conflicts, nil
+}
+
+// PreferredMerge resolves only overlapping fields. Unrelated edits still merge.
+// An empty preference keeps the contract used by older clients.
+func PreferredMerge(base, changes, remote Snapshot, prefer string) (Snapshot, Snapshot, []string, error) {
+	merged, conflicts, err := Merge(base, changes, remote)
+	patch := Snapshot{}
+	for key, value := range changes {
+		patch[key] = value
+	}
+	if err != nil || prefer == "" {
+		return merged, patch, conflicts, err
+	}
+	if prefer != "server" && prefer != "local" {
+		return nil, nil, nil, errors.New("unsupported sync preference")
+	}
+	for _, field := range conflicts {
+		if prefer == "server" {
+			delete(patch, field)
+		} else {
+			merged[field] = changes[field]
+		}
+	}
+	return merged, patch, nil, nil
 }

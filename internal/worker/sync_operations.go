@@ -35,6 +35,10 @@ func (w *Worker) submitSyncOperation(out http.ResponseWriter, r *http.Request) {
 		syncFail(out, 400, "任务操作标识无效。")
 		return
 	}
+	if body.Prefer != "" && body.Prefer != "server" && body.Prefer != "local" {
+		syncFail(out, 400, "同步优先规则无效。")
+		return
+	}
 	if _, _, err = tasksync.Merge(body.Base, body.Changes, body.Base); err != nil {
 		syncFail(out, 400, "包含未支持的任务字段。")
 		return
@@ -245,7 +249,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 			_ = json.Unmarshal(beforeRaw, &before)
 		}
 	}
-	merged, conflicts, err := tasksync.Merge(op.Base, op.Changes, before)
+	merged, changes, conflicts, err := tasksync.PreferredMerge(op.Base, op.Changes, before, op.Prefer)
 	if err != nil {
 		return w.syncOpDone(ctx, id, "failed", map[string]any{}, "任务字段无效。")
 	}
@@ -255,11 +259,30 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	} else if op.BaseRevision > revision {
 		return w.syncOpDone(ctx, id, "failed", map[string]any{}, "基础版本尚未存在。")
 	}
-	if op.Kind == "delete" && (len(tasksync.Diff(op.Base, before)) != 0 || op.BaseRevision != revision) {
+	restoringNative := false
+	previousTask := task
+	deleteConflict := op.Kind == "delete" && !deleted && len(tasksync.Diff(op.Base, before)) != 0
+	if deleteConflict {
 		conflicts = []string{"delete"}
 	}
 	if deleted && op.Kind != "delete" {
 		conflicts = []string{"delete"}
+	}
+	if len(conflicts) > 0 && op.Prefer == "server" {
+		return w.syncOpDone(ctx, id, "superseded", map[string]any{"sync_id": op.SyncID}, "")
+	}
+	if len(conflicts) > 0 && op.Prefer == "local" {
+		for field, value := range op.Changes {
+			merged[field] = value
+		}
+		conflicts = nil
+		if deleted && op.Kind != "delete" {
+			// Restore the same synchronization object with a new native task.
+			// The old native task no longer exists; PATCH would retry forever.
+			task = ""
+			current = nativeTask{}
+			restoringNative = true
+		}
 	}
 	if len(conflicts) > 0 {
 		conflictID := tasksync.ID(c.ID, "conflict:"+op.OpID)
@@ -284,9 +307,12 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		}
 		return w.syncOpDone(ctx, id, "applied", map[string]any{"sync_id": op.SyncID}, "")
 	}
-	patchChanges := op.Changes
-	if op.Kind == "create" {
+	patchChanges := changes
+	if op.Kind == "create" || task == "" {
 		patchChanges = merged
+	}
+	if op.Kind == "update" && task != "" && len(patchChanges) == 0 {
+		return w.syncOpDone(ctx, id, "superseded", map[string]any{"sync_id": op.SyncID}, "")
 	}
 	if rule, ok := merged["recurrence"].(string); ok && rule != "" {
 		loc, loadErr := time.LoadLocation(c.Timezone)
@@ -333,6 +359,13 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		if _, err = w.Pool.Exec(ctx, "UPDATE sync_objects SET paca_task_id=$2,path=$3,note_created=$4 WHERE id=$1", op.SyncID, task, op.Path, op.Created); err != nil {
 			return err
 		}
+		if restoringNative {
+			// This is the same logical source, explicitly restored by its owner.
+			// Keep the note generation and update only its deleted native target.
+			if _, err = w.Pool.Exec(ctx, "UPDATE sources SET paca_task_id=$2,state='linked',updated_at=NOW() WHERE id=(SELECT source_id FROM sync_objects WHERE id=$1) AND connection_id=$3 AND paca_task_id=$4", op.SyncID, task, c.ID, previousTask); err != nil {
+				return err
+			}
+		}
 	} else {
 		if err = w.call(ctx, "PATCH", root+"/"+task, payload, &current); err != nil {
 			return w.syncOpRetry(ctx, id, err)
@@ -347,7 +380,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 		return err
 	}
 	observed, _ := nativeSnapshot(current, c, merged)
-	_, verifyConflicts, _ := tasksync.Merge(merged, op.Changes, observed)
+	_, verifyConflicts, _ := tasksync.Merge(merged, patchChanges, observed)
 	if len(verifyConflicts) > 0 {
 		return w.syncOpDone(ctx, id, "uncertain", map[string]any{}, "任务在写入期间发生变化，请核对。")
 	}
@@ -542,7 +575,7 @@ func (w *Worker) syncConflicts(out http.ResponseWriter, r *http.Request) {
 		syncFail(out, 401, "配对无效。")
 		return
 	}
-	rows, err := w.Pool.Query(r.Context(), "SELECT id::text,object_id::text,base_revision,base,local,remote,fields FROM sync_conflicts WHERE connection_id=$1 AND state='open' ORDER BY created_at LIMIT 100", a.Connection)
+	rows, err := w.Pool.Query(r.Context(), "SELECT c.id::text,c.object_id::text,c.base_revision,c.base,c.local,o.snapshot,c.fields,o.revision FROM sync_conflicts c JOIN sync_objects o ON o.id=c.object_id WHERE c.connection_id=$1 AND c.state='open' ORDER BY c.created_at LIMIT 100", a.Connection)
 	if err != nil {
 		syncFail(out, 503, "冲突暂不可读。")
 		return
@@ -551,13 +584,13 @@ func (w *Worker) syncConflicts(out http.ResponseWriter, r *http.Request) {
 	items := []any{}
 	for rows.Next() {
 		var id, obj string
-		var rev int64
+		var rev, revision int64
 		var base, local, remote, fields []byte
-		if rows.Scan(&id, &obj, &rev, &base, &local, &remote, &fields) != nil {
+		if rows.Scan(&id, &obj, &rev, &base, &local, &remote, &fields, &revision) != nil {
 			syncFail(out, 503, "冲突读取失败。")
 			return
 		}
-		items = append(items, map[string]any{"id": id, "sync_id": obj, "base_revision": rev, "base": json.RawMessage(base), "local": json.RawMessage(local), "remote": json.RawMessage(remote), "fields": json.RawMessage(fields)})
+		items = append(items, map[string]any{"id": id, "sync_id": obj, "base_revision": rev, "revision": revision, "base": json.RawMessage(base), "local": json.RawMessage(local), "remote": json.RawMessage(remote), "fields": json.RawMessage(fields)})
 	}
 	if rows.Err() != nil {
 		syncFail(out, 503, "冲突读取失败。")
@@ -612,6 +645,7 @@ func (w *Worker) resolveSyncConflict(out http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(raw, &op)
 		_ = json.Unmarshal(snapshot, &op.Base)
 		op.BaseRevision = currentRevision
+		op.Prefer = body.Keep
 		next, _ := json.Marshal(op)
 		_, err = tx.Exec(r.Context(), "UPDATE sync_operations SET body=$2::jsonb,state='pending',error='',next_attempt=NOW() WHERE id=$1", opID, string(next))
 	}
