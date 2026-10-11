@@ -38,20 +38,30 @@ func TestPreferredMergeKeepsUnrelatedEditsInBothDirections(t *testing.T) {
 	for _, prefer := range []string{"server", "local"} {
 		merged, patch, conflicts, err := PreferredMerge(base, changes, remote, prefer)
 		expected := "server"
-		if prefer == "local" { expected = "local" }
+		if prefer == "local" {
+			expected = "local"
+		}
 		if err != nil || len(conflicts) != 0 || merged["title"] != expected || merged["priority"] != "high" || !Equal(merged["tags"], remote["tags"]) {
 			t.Fatalf("%s discarded an unrelated edit: %#v %#v %v", prefer, merged, conflicts, err)
 		}
 		_, patched := patch["title"]
-		if patched != (prefer == "local") { t.Fatalf("%s produced the wrong native patch: %#v", prefer, patch) }
+		if patched != (prefer == "local") {
+			t.Fatalf("%s produced the wrong native patch: %#v", prefer, patch)
+		}
 	}
-	if changes["title"] != "local" || remote["title"] != "server" { t.Fatal("input snapshots were changed") }
+	if changes["title"] != "local" || remote["title"] != "server" {
+		t.Fatal("input snapshots were changed")
+	}
 }
 
 func TestPreferredMergeRejectsUnknownPriority(t *testing.T) {
-	if _, _, _, err := PreferredMerge(Snapshot{}, Snapshot{}, Snapshot{}, "newest"); err == nil { t.Fatal("unknown priority accepted") }
+	if _, _, _, err := PreferredMerge(Snapshot{}, Snapshot{}, Snapshot{}, "newest"); err == nil {
+		t.Fatal("unknown priority accepted")
+	}
 }
 
 func TestTaskBodyNormalizesDesktopAndMobileLineEndings(t *testing.T) {
-	if TaskBody("标题\r\n正文\r\n") != TaskBody("标题\n正文\n") { t.Fatal("line endings created a content conflict") }
+	if TaskBody("标题\r\n正文\r\n") != TaskBody("标题\n正文\n") {
+		t.Fatal("line endings created a content conflict")
+	}
 }

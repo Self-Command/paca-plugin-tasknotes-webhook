@@ -308,8 +308,12 @@ func (w *Worker) syncBinding(out http.ResponseWriter, r *http.Request) {
 		_, err = tx.Exec(r.Context(), "UPDATE sync_objects SET revision=$2 WHERE id=$1", body.SyncID, revision)
 		change := tasksync.Change{SyncID: body.SyncID, TaskID: task, Revision: revision, Path: body.Path, Created: body.Created, SourceRef: ref, Snapshot: snapshot}
 		change.Kind = "task"
-		if rule, ok := snapshot["recurrence"].(string); ok && rule != "" { change.Kind = "series" }
-		if date, ok := snapshot["occurrence_date"].(string); ok && date != "" { change.Kind = "occurrence" }
+		if rule, ok := snapshot["recurrence"].(string); ok && rule != "" {
+			change.Kind = "series"
+		}
+		if date, ok := snapshot["occurrence_date"].(string); ok && date != "" {
+			change.Kind = "occurrence"
+		}
 		payload, _ := json.Marshal(change)
 		if err == nil {
 			_, err = tx.Exec(r.Context(), "INSERT INTO sync_changes(connection_id,object_id,revision,payload) VALUES($1,$2,$3,$4::jsonb)", a.Connection, body.SyncID, revision, string(payload))
