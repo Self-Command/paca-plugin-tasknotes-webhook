@@ -65,6 +65,7 @@ func (w *Worker) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /task-sync/v1/pair", w.migratePair)
 	mux.HandleFunc("GET /task-sync/v1/info", w.syncInfo)
+	mux.HandleFunc("POST /task-sync/v1/preference", w.syncPreference)
 	mux.HandleFunc("GET /task-sync/v1/lookup", w.syncLookup)
 	mux.HandleFunc("GET /task-sync/v1/changes", w.syncChanges)
 	mux.HandleFunc("POST /task-sync/v1/operations", w.submitSyncOperation)

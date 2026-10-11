@@ -63,13 +63,24 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 		if e.Event == "task.deleted" {
 			return true, w.applied(ctx, inbox, s, e, "deleted")
 		}
-		return true, w.finish(ctx, inbox, "conflict", "对应任务已不存在或当前不可访问，请核对后处理此变更。")
+		if config.Preference == "server" {
+			return true, w.applied(ctx, inbox, s, e, "deleted")
+		}
+		if config.Preference == "" {
+			return true, w.finish(ctx, inbox, "conflict", "对应任务已不存在或当前不可访问，请核对后处理此变更。")
+		}
+		if err = w.acceptNative(ctx, config, nativeTask{ID: s.TaskID}, true); err != nil {
+			return true, err
+		}
+		err = nil
 	}
 	if err != nil {
 		return true, err
 	}
-	if err = w.acceptNative(ctx, config, native, false); err != nil {
-		return true, err
+	if native.ID != "" {
+		if err = w.acceptNative(ctx, config, native, false); err != nil {
+			return true, err
+		}
 	}
 	var object string
 	var revision int64
@@ -124,7 +135,33 @@ func (w *Worker) syncWebhook(ctx context.Context, c connection, s source, e task
 	if len(changes) == 0 && kind != "delete" {
 		return true, w.applied(ctx, inbox, s, e, s.State)
 	}
-	op := tasksync.Operation{OpID: "webhook:" + tasksync.ID(c.ID, strconv.FormatInt(inbox, 10)+e.Timestamp), SyncID: object, BaseRevision: revision, Kind: kind, Base: base, Changes: changes, Path: e.Data.Task.Path, Created: e.Data.Task.DateCreated}
+	op := tasksync.Operation{OpID: "webhook:" + tasksync.ID(c.ID, strconv.FormatInt(inbox, 10)+e.Timestamp), SyncID: object, BaseRevision: revision, Kind: kind, Base: base, Changes: changes, Path: e.Data.Task.Path, Created: e.Data.Task.DateCreated, Prefer: config.Preference, Modified: e.EffectiveTask().DateModified}
+	if op.Modified != "" {
+		duplicates, checkErr := w.Pool.Query(ctx, "SELECT body FROM sync_operations WHERE object_id=$1 AND device_id<>'webhook' AND body->>'event_modified'=$2 AND body->>'kind'=$3 AND state NOT IN('failed','uncertain')", object, op.Modified, kind)
+		if checkErr != nil {
+			return true, checkErr
+		}
+		matchedOperation := false
+		for duplicates.Next() {
+			var raw []byte
+			if checkErr = duplicates.Scan(&raw); checkErr != nil {
+				duplicates.Close()
+				return true, checkErr
+			}
+			var prior tasksync.Operation
+			if json.Unmarshal(raw, &prior) == nil && tasksync.Equal(prior.Changes, changes) {
+				matchedOperation = true
+			}
+		}
+		checkErr = duplicates.Err()
+		duplicates.Close()
+		if checkErr != nil {
+			return true, checkErr
+		}
+		if matchedOperation {
+			return true, w.finish(ctx, inbox, "applied", "相同任务变更已由同步插件接收。")
+		}
+	}
 	raw, _ := json.Marshal(op)
 	_, err = w.Pool.Exec(ctx, "INSERT INTO sync_operations(connection_id,object_id,device_id,op_id,body_hash,body,inbox_id) VALUES($1,$2,'webhook',$3,$4,$5::jsonb,$6) ON CONFLICT(connection_id,op_id) DO NOTHING", c.ID, object, op.OpID, tasksync.Hash(op), string(raw), inbox)
 	if err != nil {

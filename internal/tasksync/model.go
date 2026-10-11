@@ -23,6 +23,7 @@ type Operation struct {
 	Changes      Snapshot `json:"changes"`
 	Path         string   `json:"path,omitempty"`
 	Created      string   `json:"note_created,omitempty"`
+	Modified     string   `json:"event_modified,omitempty"`
 	Prefer       string   `json:"prefer,omitempty"`
 }
 type Change struct {

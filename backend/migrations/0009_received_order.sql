@@ -4,4 +4,5 @@ CREATE TABLE sync_native_events (
  topic TEXT NOT NULL,occurred_at TIMESTAMPTZ NOT NULL,content JSONB NOT NULL
 );
 CREATE INDEX sync_native_events_task_order ON sync_native_events(task_id,occurred_at);
+ALTER TABLE connections ADD COLUMN sync_priority TEXT NOT NULL DEFAULT '' CHECK(sync_priority IN('','latest','server','local'));
 UPDATE plugin_metadata SET version=9 WHERE id=1;
