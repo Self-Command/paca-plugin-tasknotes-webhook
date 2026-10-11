@@ -35,7 +35,7 @@ func (w *Worker) submitSyncOperation(out http.ResponseWriter, r *http.Request) {
 		syncFail(out, 400, "任务操作标识无效。")
 		return
 	}
-	if body.Prefer != "" && body.Prefer != "server" && body.Prefer != "local" {
+	if body.Prefer != "" && body.Prefer != "server" && body.Prefer != "local" && body.Prefer != "latest" {
 		syncFail(out, 400, "同步优先规则无效。")
 		return
 	}
@@ -235,8 +235,18 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	if task != "" {
 		err = w.call(ctx, "GET", root+"/"+task, nil, &current)
 		var api apiError
-		if err != nil && !((op.Kind == "delete" || deleted) && errors.As(err, &api) && api.Code == 404) {
-			return w.syncOpRetry(ctx, id, err)
+		if err != nil {
+			if !(errors.As(err, &api) && api.Code == 404) {
+				return w.syncOpRetry(ctx, id, err)
+			}
+			if err = w.acceptNative(ctx, c, nativeTask{ID: task}, true); err != nil {
+				return err
+			}
+			deleted = true
+			if err = w.Pool.QueryRow(ctx, "SELECT revision,snapshot FROM sync_objects WHERE id=$1", op.SyncID).Scan(&revision, &beforeRaw); err != nil {
+				return err
+			}
+			_ = json.Unmarshal(beforeRaw, &before)
 		}
 		if current.ID != "" {
 			if err = w.acceptNative(ctx, c, current, false); err != nil {
@@ -249,7 +259,35 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 			_ = json.Unmarshal(beforeRaw, &before)
 		}
 	}
-	merged, changes, conflicts, err := tasksync.PreferredMerge(op.Base, op.Changes, before, op.Prefer)
+	mergePreference := op.Prefer
+	if mergePreference == "latest" {
+		mergePreference = "local"
+	}
+	merged, changes, conflicts, err := tasksync.PreferredMerge(op.Base, op.Changes, before, mergePreference)
+	if err == nil && op.Prefer == "latest" && task != "" {
+		later, orderErr := w.laterNativeFields(ctx, id, task, current)
+		if orderErr != nil {
+			return w.syncOpRetry(ctx, id, orderErr)
+		}
+		if (later["delete"] && op.Kind != "delete") || (op.Kind == "delete" && !deleted && len(later) > 0) {
+			return w.syncOpDone(ctx, id, "superseded", map[string]any{"sync_id": op.SyncID}, "")
+		}
+		if later["custom"] {
+			for _, field := range []string{"scheduled", "due", "details", "archived", "recurrence", "recurrence_anchor", "complete_instances", "skipped_instances", "recurrence_parent", "occurrence_date"} {
+				if !tasksync.Equal(op.Base[field], before[field]) {
+					later[field] = true
+				}
+			}
+			delete(later, "custom")
+		}
+		for field := range later {
+			if _, submitted := changes[field]; submitted {
+				delete(changes, field)
+				merged[field] = before[field]
+			}
+		}
+	}
+
 	if err != nil {
 		return w.syncOpDone(ctx, id, "failed", map[string]any{}, "任务字段无效。")
 	}
@@ -271,7 +309,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	if len(conflicts) > 0 && op.Prefer == "server" {
 		return w.syncOpDone(ctx, id, "superseded", map[string]any{"sync_id": op.SyncID}, "")
 	}
-	if len(conflicts) > 0 && op.Prefer == "local" {
+	if len(conflicts) > 0 && (op.Prefer == "local" || op.Prefer == "latest") {
 		for field, value := range op.Changes {
 			merged[field] = value
 		}
@@ -334,6 +372,20 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	if err != nil {
 		return w.syncOpDone(ctx, id, "failed", map[string]any{}, err.Error())
 	}
+	extra := payload["custom_fields"].(map[string]any)["_task_sync_v1"].(map[string]any)
+	extra["received_op_id"] = op.OpID
+	writeStarted := time.Now().UTC()
+	expected := map[string]any{}
+	for field, value := range payload {
+		if field != "custom_fields" {
+			expected[field] = value
+		}
+	}
+	expected["custom_fields"] = true
+	provenance, _ := json.Marshal(map[string]any{"write_from": writeStarted, "write_expected": expected})
+	if _, err = w.Pool.Exec(ctx, "UPDATE sync_operations SET result=result || $2::jsonb WHERE id=$1", id, string(provenance)); err != nil {
+		return err
+	}
 	if task == "" {
 		if state == "sending" {
 			found, findErr := w.findRef(ctx, c.Project, ref)
@@ -376,6 +428,11 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 			return w.syncOpRetry(ctx, id, err)
 		}
 	}
+	if op.Path != "" && op.Created != "" {
+		if _, err = w.Pool.Exec(ctx, "UPDATE sources SET snapshot=snapshot || jsonb_build_object('path',$2::text,'id',$2::text,'dateCreated',$3::text),updated_at=NOW() WHERE id=(SELECT source_id FROM sync_objects WHERE id=$1)", op.SyncID, op.Path, op.Created); err != nil {
+			return err
+		}
+	}
 	if err = w.acceptNative(ctx, c, current, false); err != nil {
 		return err
 	}
@@ -384,7 +441,7 @@ func (w *Worker) applySyncOperation(ctx context.Context) error {
 	if len(verifyConflicts) > 0 {
 		return w.syncOpDone(ctx, id, "uncertain", map[string]any{}, "任务在写入期间发生变化，请核对。")
 	}
-	return w.syncOpDone(ctx, id, "applied", map[string]any{"sync_id": op.SyncID, "task_id": task}, "")
+	return w.syncOpDone(ctx, id, "applied", map[string]any{"sync_id": op.SyncID, "task_id": task, "write_from": writeStarted, "write_until": time.Now().UTC(), "write_expected": expected, "native_updated_at": current.UpdatedAt, "snapshot": observed}, "")
 }
 
 // A missing parent is a bounded dependency, not an infinite write retry.

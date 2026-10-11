@@ -108,7 +108,7 @@ func (w *Worker) syncInfo(out http.ResponseWriter, r *http.Request) {
 		syncFail(out, 503, "同步设置暂不可用。")
 		return
 	}
-	syncJSON(out, 200, map[string]any{"connection_id": a.Connection, "project_id": a.Project, "mode": a.Mode, "timezone": c.Timezone, "status_map": c.Statuses, "priority_map": c.Priorities, "sync_priorities": []string{"server", "local"}})
+	syncJSON(out, 200, map[string]any{"connection_id": a.Connection, "project_id": a.Project, "mode": a.Mode, "timezone": c.Timezone, "status_map": c.Statuses, "priority_map": c.Priorities, "sync_priorities": []string{"latest", "server", "local"}})
 }
 func (w *Worker) syncChanges(out http.ResponseWriter, r *http.Request) {
 	a, err := w.syncAuth(r.Context(), r)

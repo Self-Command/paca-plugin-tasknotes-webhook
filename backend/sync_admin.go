@@ -126,5 +126,16 @@ func (p *integrationPlugin) revokeSync(req *plugin.Request, res *plugin.Response
 	res.JSON(200, map[string]any{"revoked": n == 1})
 }
 func (p *integrationPlugin) syncDirty(evt *plugin.Event) {
+	var event struct {
+		ID      string `json:"id"`
+		Project string `json:"project_id"`
+		Task    string `json:"task_id"`
+		At      string `json:"created_at"`
+		Content string `json:"content"`
+	}
+	if json.Unmarshal(evt.Payload, &event) == nil && uuidPattern.MatchString(event.ID) && uuidPattern.MatchString(event.Project) && uuidPattern.MatchString(event.Task) && json.Valid([]byte(event.Content)) {
+		_, _ = p.db.Exec("INSERT INTO sync_native_events(id,project_id,task_id,topic,occurred_at,content) VALUES($1,$2,$3,$4,$5::timestamptz,$6::jsonb) ON CONFLICT(id) DO NOTHING", event.ID, event.Project, event.Task, evt.Topic, event.At, event.Content)
+	}
+
 	_, _ = p.db.Exec("INSERT INTO sync_dirty(project_id) SELECT DISTINCT project_id FROM connections WHERE sync_mode<>'off' ON CONFLICT(project_id) DO UPDATE SET updated_at=NOW()")
 }

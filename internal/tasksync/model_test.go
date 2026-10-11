@@ -35,17 +35,17 @@ func TestPreferredMergeKeepsUnrelatedEditsInBothDirections(t *testing.T) {
 	base := Snapshot{"title": "original", "priority": "normal", "tags": []string{"original"}}
 	remote := Snapshot{"title": "server", "priority": "normal", "tags": []string{"server"}}
 	changes := Snapshot{"title": "local", "priority": "high"}
-	for _, prefer := range []string{"server", "local"} {
+	for _, prefer := range []string{"latest", "server", "local"} {
 		merged, patch, conflicts, err := PreferredMerge(base, changes, remote, prefer)
 		expected := "server"
-		if prefer == "local" {
+		if prefer != "server" {
 			expected = "local"
 		}
 		if err != nil || len(conflicts) != 0 || merged["title"] != expected || merged["priority"] != "high" || !Equal(merged["tags"], remote["tags"]) {
 			t.Fatalf("%s discarded an unrelated edit: %#v %#v %v", prefer, merged, conflicts, err)
 		}
 		_, patched := patch["title"]
-		if patched != (prefer == "local") {
+		if patched != (prefer != "server") {
 			t.Fatalf("%s produced the wrong native patch: %#v", prefer, patch)
 		}
 	}

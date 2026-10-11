@@ -107,8 +107,8 @@ try:
         body={'op_id':str(uuid.uuid4()),'sync_id':item['sync_id'],'base_revision':item['revision'],'kind':kind,'base':item['snapshot'],'changes':changes,'prefer':prefer}
         sync_request('POST','/operations',body,202)
         return body
-    assert sync_request('GET','/info')['sync_priorities']==['server','local']
-    for prefer in ('server','local'):
+    assert sync_request('GET','/info')['sync_priorities']==['latest','server','local']
+    for prefer in ('latest','server','local'):
         preferred_core=request('POST',f'/projects/{sync_project["id"]}/tasks',{'title':'优先规则原始标题 '+prefer,'status_id':sync_mapping['open']},201)['data']
         preferred_base=sync_item(preferred_core['id'])
         request('PATCH',f'/projects/{sync_project["id"]}/tasks/{preferred_core["id"]}',{'title':'服务器修改 '+prefer,'tags':['保留服务器标签']})
@@ -212,6 +212,7 @@ try:
         if not any(row['id']==delete_core['id'] for row in core_rows):break
         time.sleep(.5)
     else:raise AssertionError('Unchanged deletion snapshot was misclassified as an echo')
+    exec((ROOT/'scripts/sync-priority-matrix.py').read_text(),globals())
     exec((ROOT/'scripts/settings-history-integration.py').read_text(),globals())
     exec((ROOT/'scripts/history-discard-integration.py').read_text(),globals())
     exec((ROOT/'scripts/recurrence-integration.py').read_text(),globals())

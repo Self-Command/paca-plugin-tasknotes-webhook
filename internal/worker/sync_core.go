@@ -22,6 +22,7 @@ type syncConfig struct {
 	Recurrence bool
 }
 type nativeTask struct {
+	UpdatedAt   time.Time       `json:"updated_at"`
 	ID          string          `json:"id"`
 	Title       string          `json:"title"`
 	Description json.RawMessage `json:"description"`
@@ -181,6 +182,16 @@ func (w *Worker) SyncTick(ctx context.Context) error {
 	return nil
 }
 func (w *Worker) scanSync(ctx context.Context, id string) error {
+	lockConn, err := w.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer lockConn.Release()
+	var locked bool
+	if err = lockConn.QueryRow(ctx, "SELECT pg_try_advisory_lock(hashtextextended($1,0))", id).Scan(&locked); err != nil || !locked {
+		return err
+	}
+	defer lockConn.Exec(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1,0))", id)
 	c, err := w.syncConfig(ctx, id)
 	if err != nil {
 		return err

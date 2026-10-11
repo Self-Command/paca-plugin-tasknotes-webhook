@@ -94,7 +94,7 @@ func PreferredMerge(base, changes, remote Snapshot, prefer string) (Snapshot, Sn
 	if err != nil || prefer == "" {
 		return merged, patch, conflicts, err
 	}
-	if prefer != "server" && prefer != "local" {
+	if prefer != "server" && prefer != "local" && prefer != "latest" {
 		return nil, nil, nil, errors.New("unsupported sync preference")
 	}
 	for _, field := range conflicts {

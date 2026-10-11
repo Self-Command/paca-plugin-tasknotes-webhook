@@ -116,7 +116,7 @@ with sync_playwright() as dpw:
     cmd('docker','restart','paca-ci-api')
     for _ in range(60):
         try:
-            if request('GET',f'/plugins/{plugin_id}/health')['schema_version']==8:break
+            if request('GET',f'/plugins/{plugin_id}/health')['schema_version']==9:break
         except (OSError,RuntimeError):pass
         time.sleep(.5)
     else:raise AssertionError('Official host did not restart')
