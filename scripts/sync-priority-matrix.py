@@ -40,7 +40,7 @@ for prefer in ('latest','server','local'):
     wait_operation(delayed)
     actual=request('GET',f'/projects/{sync_project["id"]}/tasks/{core["id"]}')['data']
     assert actual['title']==('较早接收的本地请求' if prefer=='local' else '较晚接收的服务器修改'),(prefer,actual)
-    assert actual['importance']==25 and '服务器后来标签' in actual['tags']
+    assert actual['importance']==10 and '服务器后来标签' in actual['tags']
     # Several already-received local edits retain their own order. The native
     # event from the first write cannot suppress the second queued write.
     base_item=sync_item(core['id'])

@@ -90,6 +90,7 @@ with sync_playwright() as pw:
     assert response.ok, 'browser login unsuccessful'
     page=context.new_page()
     page.goto(f'http://127.0.0.1:18081/projects/{project["id"]}/settings/',wait_until='domcontentloaded')
+    page.get_by_role('button',name=manifest['displayName'],exact=True).last.wait_for(timeout=45000)
     page.get_by_role('button',name=manifest['displayName'],exact=True).last.click(timeout=45000)
     page.get_by_role('status').filter(has_text='已连接' ).wait_for(timeout=30000)
     page.get_by_label('项目连接',exact=True).click()
